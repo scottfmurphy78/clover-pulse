@@ -8,9 +8,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
 
-// Supabase service-role client (server-side, full access)
 async function sbFetch(path, options = {}) {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     ...options,
@@ -25,15 +23,12 @@ async function sbFetch(path, options = {}) {
   return r.json();
 }
 
-// Find profile by WhatsApp number
 async function getProfileByWhatsApp(phone) {
-  // Normalize: strip spaces and dashes
   const normalized = phone.replace(/[\s\-]/g, "");
   const data = await sbFetch(`profiles?whatsapp=eq.${encodeURIComponent(normalized)}&select=*`);
   return Array.isArray(data) ? data[0] : null;
 }
 
-// Get Monday's date for the current week
 function currentWeekOf() {
   const d = new Date();
   const day = d.getDay();
@@ -43,39 +38,39 @@ function currentWeekOf() {
   return mon.toISOString().split("T")[0];
 }
 
-// Download audio from Twilio media URL
 async function downloadAudio(mediaUrl) {
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const authToken = process.env.TWILIO_AUTH_TOKEN;
   const credentials = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
-  const r = await fetch(mediaUrl, {
-    headers: { "Authorization": `Basic ${credentials}` },
-  });
+  const r = await fetch(mediaUrl, { headers: { "Authorization": `Basic ${credentials}` } });
   if (!r.ok) throw new Error(`Failed to download audio: ${r.status}`);
   const buffer = await r.arrayBuffer();
   return Buffer.from(buffer);
 }
 
-// Transcribe audio with OpenAI Whisper
 async function transcribeAudio(audioBuffer) {
-  const { FormData, Blob } = await import("node:buffer").catch(() => ({}));
-
-  const form = new FormData();
-  form.append("file", new Blob([audioBuffer], { type: "audio/ogg" }), "audio.ogg");
-  form.append("model", "whisper-1");
-  form.append("language", "en");
-
+  const boundary = "----WhisperBoundary" + Date.now();
+  const beforeFile = Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.ogg"\r\nContent-Type: audio/ogg\r\n\r\n`
+  );
+  const afterFile = Buffer.from(
+    `\r\n--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n--${boundary}\r\nContent-Disposition: form-data; name="language"\r\n\r\nen\r\n--${boundary}--\r\n`
+  );
+  const body = Buffer.concat([beforeFile, audioBuffer, afterFile]);
   const r = await fetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
-    headers: { "Authorization": `Bearer ${OPENAI_API_KEY}` },
-    body: form,
+    headers: {
+      "Authorization": `Bearer ${OPENAI_API_KEY}`,
+      "Content-Type": `multipart/form-data; boundary=${boundary}`,
+      "Content-Length": String(body.length),
+    },
+    body,
   });
   const data = await r.json();
   if (!r.ok) throw new Error(`Whisper error: ${JSON.stringify(data)}`);
   return data.text;
 }
 
-// Parse transcript with Claude
 async function parseWithClaude(transcript, existingEntry) {
   const system = `You are an assistant that extracts weekly work updates from voice note transcripts.
 Return ONLY valid JSON with this exact structure, no preamble, no markdown:
@@ -125,7 +120,6 @@ Rules:
   return JSON.parse(text.replace(/```json|```/g, "").trim());
 }
 
-// Save to Supabase pulse_entries
 async function savePulseEntry(userId, weekOf, parsed) {
   return sbFetch("pulse_entries", {
     method: "POST",
@@ -141,32 +135,20 @@ async function savePulseEntry(userId, weekOf, parsed) {
   });
 }
 
-// Twilio TwiML response
 function twimlResponse(message) {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Message>${message}</Message>
-</Response>`;
+  return `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${message}</Message></Response>`;
 }
 
-// ── Main handler ──────────────────────────────────────────────────────
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).send("Method not allowed");
-  }
-
+  if (req.method !== "POST") return res.status(405).send("Method not allowed");
   try {
-    // Parse Twilio's form-encoded body
     const body = req.body || {};
-    const from = body.From || ""; // e.g. "whatsapp:+34600000000"
+    const from = body.From || "";
     const mediaUrl = body.MediaUrl0 || null;
     const mediaContentType = body.MediaContentType0 || "";
     const textBody = body.Body || "";
-
-    // Clean phone number
     const phone = from.replace("whatsapp:", "");
 
-    // Look up user by WhatsApp number
     const profile = await getProfileByWhatsApp(phone);
     if (!profile) {
       res.setHeader("Content-Type", "text/xml");
@@ -175,9 +157,8 @@ export default async function handler(req, res) {
       ));
     }
 
-    // Must be a voice note (audio)
     const isAudio = mediaContentType.startsWith("audio/");
-    const isText = !mediaUrl && textBody.length > 0;
+    const isText = !mediaUrl && textBody.length > 10;
 
     if (!isAudio && !isText) {
       res.setHeader("Content-Type", "text/xml");
@@ -187,8 +168,6 @@ export default async function handler(req, res) {
     }
 
     let transcript = textBody;
-
-    // If voice note, download and transcribe
     if (isAudio && mediaUrl) {
       const audioBuffer = await downloadAudio(mediaUrl);
       transcript = await transcribeAudio(audioBuffer);
@@ -199,17 +178,11 @@ export default async function handler(req, res) {
       return res.status(200).send(twimlResponse("I couldn't make out your message. Try again!"));
     }
 
-    // Check for existing entry this week
     const weekOf = currentWeekOf();
-    const existing = await sbFetch(
-      `pulse_entries?user_id=eq.${profile.user_id}&week_of=eq.${weekOf}&select=*`
-    );
+    const existing = await sbFetch(`pulse_entries?user_id=eq.${profile.user_id}&week_of=eq.${weekOf}&select=*`);
     const existingEntry = Array.isArray(existing) ? existing[0] : null;
 
-    // Parse with Claude
     const parsed = await parseWithClaude(transcript, existingEntry);
-
-    // Save to Supabase
     await savePulseEntry(profile.user_id, weekOf, parsed);
 
     const firstName = profile.name?.split(" ")[0] || "there";
