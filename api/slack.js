@@ -255,16 +255,22 @@ export default async function handler(req, res) {
   // Handle events
   if (body.type === "event_callback") {
     const event = body.event;
+    console.log("Event type:", event.type, "subtype:", event.subtype, "channel_type:", event.channel_type);
 
     // Only handle DMs, ignore bot messages
     if (event.type !== "message" || event.subtype === "bot_message" || !event.user) {
+      console.log("Skipping — not a user message");
       return res.status(200).send("ok");
     }
 
     // Only handle DM channels
-    if (!event.channel_type === "im") return res.status(200).send("ok");
+    if (event.channel_type !== "im") {
+      console.log("Skipping — not a DM, channel_type:", event.channel_type);
+      return res.status(200).send("ok");
+    }
 
     res.status(200).send("ok"); // Respond immediately to Slack
+    console.log("Processing message from Slack user:", event.user);
 
     try {
       const slackUserId = event.user;
