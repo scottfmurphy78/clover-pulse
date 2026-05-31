@@ -324,14 +324,17 @@ function LastWeek({ completedLast = [], doneTasks = [], onLight = true }) {
   return (
     <div style={{ marginTop: 14, paddingTop: 12, borderTop: `0.5px solid ${borderColor}` }}>
       <button onClick={() => setOpen(!open)} style={{
-        background: "none", border: "none", cursor: "pointer", padding: 0,
-        fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, fontWeight: 600,
-        color: onLight ? C.gray400 : "rgba(255,255,255,0.38)",
-        display: "flex", alignItems: "center", gap: 5,
-        letterSpacing: "0.06em", textTransform: "uppercase",
+        background: onLight ? C.lavender : "rgba(255,255,255,0.1)",
+        border: `1px solid ${onLight ? C.gray200 : "rgba(255,255,255,0.15)"}`,
+        borderRadius: 8, cursor: "pointer",
+        padding: "7px 12px", width: "100%",
+        fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, fontWeight: 600,
+        color: onLight ? C.blue : "rgba(255,255,255,0.6)",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        letterSpacing: "0.04em",
       }}>
-        <span style={{ display: "inline-block", transform: open ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>›</span>
-        Last week · {allItems.length} completed
+        <span>✓ Last week · {allItems.length} completed</span>
+        <span style={{ display: "inline-block", transform: open ? "rotate(180deg)" : "none", transition: "transform 0.2s", fontSize: 14 }}>⌄</span>
       </button>
       {open && (
         <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 4 }}>
@@ -493,7 +496,7 @@ function MemberCard({ member, entry, lastEntry, isCurrentUser, isAdmin, token, w
               <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "rgba(222,28,119,0.25)", borderRadius: 10, padding: "9px 12px", marginBottom: 12, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: "#ffb3d0", lineHeight: 1.45 }}>
                 <span style={{ flexShrink: 0 }}>⚠</span>
                 <span style={{ flex: 1 }}>{b}</span>
-                {canEdit && <button onClick={() => resolveBlocker(i)} style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: 6, padding: "2px 8px", color: "#fff", cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 600, whiteSpace: "nowrap" }}>Resolve</button>}
+                {canEdit && <button onClick={(e) => { e.stopPropagation(); resolveBlocker(i); }} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: 6, padding: "4px 10px", color: "#fff", cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0 }}>✓ Resolve</button>}
               </div>
             ))}
             {tasks.length > 0 && (
@@ -570,7 +573,7 @@ function MemberCard({ member, entry, lastEntry, isCurrentUser, isAdmin, token, w
             <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#FFF0F3", border: `1px solid #FFB3C0`, borderRadius: 10, padding: "9px 12px", marginBottom: 12, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12.5, color: C.error, lineHeight: 1.45 }}>
               <span style={{ flexShrink: 0 }}>⚠</span>
               <span style={{ flex: 1 }}>{b}</span>
-              {canEdit && <button onClick={() => resolveBlocker(i)} style={{ background: `${C.error}15`, border: `1px solid ${C.error}30`, borderRadius: 6, padding: "2px 8px", color: C.error, cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 600, whiteSpace: "nowrap" }}>Resolve</button>}
+              {canEdit && <button onClick={(e) => { e.stopPropagation(); resolveBlocker(i); }} style={{ background: "#fff", border: `1.5px solid ${C.error}`, borderRadius: 6, padding: "4px 10px", color: C.error, cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0 }}>✓ Resolve</button>}
             </div>
           ))}
 
