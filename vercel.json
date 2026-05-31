@@ -2,5 +2,23 @@
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api/:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron?job=carryover&secret=clover2026pulse",
+      "schedule": "0 6 * * 1"
+    },
+    {
+      "path": "/api/cron?job=sunday-reminder&secret=clover2026pulse",
+      "schedule": "0 18 * * 0"
+    },
+    {
+      "path": "/api/cron?job=monday-reminder&secret=clover2026pulse",
+      "schedule": "30 7 * * 1"
+    },
+    {
+      "path": "/api/cron?job=monday-digest&secret=clover2026pulse",
+      "schedule": "15 8 * * 1"
+    }
   ]
 }
