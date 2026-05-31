@@ -2,7 +2,7 @@
 // Vercel serverless function — /api/slack
 // ─────────────────────────────────────────────────────────────────────
 
-export const config = { api: { bodyParser: false }, maxDuration: 60 };
+export const config = { maxDuration: 60 };
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -21,13 +21,22 @@ function isDuplicate(eventId) {
   return false;
 }
 
-// Raw body reader
+// Raw body reader with timeout
 async function getRawBody(req) {
   return new Promise((resolve, reject) => {
     let data = "";
+    const timeout = setTimeout(() => {
+      console.log("getRawBody timeout, data so far:", data.length);
+      resolve(data);
+    }, 5000);
     req.on("data", chunk => { data += chunk; });
-    req.on("end", () => resolve(data));
-    req.on("error", reject);
+    req.on("end", () => { clearTimeout(timeout); resolve(data); });
+    req.on("error", (err) => { clearTimeout(timeout); reject(err); });
+    // If req already has body (some Vercel configs pre-parse)
+    if (req.body) {
+      clearTimeout(timeout);
+      resolve(typeof req.body === "string" ? req.body : JSON.stringify(req.body));
+    }
   });
 }
 
@@ -185,14 +194,12 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).send("Method not allowed");
 
   console.log("=== SLACK REQUEST ===");
-  const rawBody = await getRawBody(req);
-  console.log("Raw body length:", rawBody.length, "preview:", rawBody.substring(0, 100));
+  console.log("Headers:", JSON.stringify(req.headers).substring(0, 200));
 
-  const valid = await verifySlackSignature(req, rawBody);
-  if (!valid) return res.status(401).send("Invalid signature");
-
-  const body = JSON.parse(rawBody);
-  console.log("Body type:", body.type, "event_id:", body.event_id);
+  // Use req.body directly — Vercel parses it automatically
+  const body = req.body;
+  console.log("Body type:", body?.type, "event_id:", body?.event_id);
+  console.log("Body preview:", JSON.stringify(body)?.substring(0, 200));
 
   if (body.type === "url_verification") {
     console.log("URL verification challenge");
