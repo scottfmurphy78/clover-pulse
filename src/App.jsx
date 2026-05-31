@@ -98,6 +98,13 @@ const sb = {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/pulse_entries?week_of=eq.${weekOf}&select=*`, { headers: this.h(token) });
     return r.json();
   },
+  async getAllWeeks(token) {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/pulse_entries?select=week_of&order=week_of.desc`, { headers: this.h(token) });
+    const data = await r.json();
+    if (!Array.isArray(data)) return [];
+    const unique = [...new Set(data.map(e => e.week_of))];
+    return unique;
+  },
   async upsertPulseEntry(token, entry) {
     const r = await fetch(
       `${SUPABASE_URL}/rest/v1/pulse_entries?user_id=eq.${entry.user_id}&week_of=eq.${entry.week_of}`,
@@ -856,49 +863,119 @@ function AdminScreen({ token, onBack }) {
   );
 }
 
-// ── DASHBOARD SCREEN ──────────────────────────────────────────────────
+// ── Week navigator ────────────────────────────────────────────────────
+function WeekNav({ currentWeek, allWeeks, onChange }) {
+  const idx = allWeeks.indexOf(currentWeek);
+  const canBack = idx < allWeeks.length - 1;
+  const canForward = idx > 0;
+  const isCurrentWeek = idx === 0;
+
+  const navBtn = (onClick, disabled, label, icon) => (
+    <button onClick={onClick} disabled={disabled} style={{
+      background: "none", border: "none", cursor: disabled ? "not-allowed" : "pointer",
+      width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center",
+      color: disabled ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.6)",
+      fontSize: 18, fontWeight: 300,
+    }} aria-label={label}>{icon}</button>
+  );
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      {navBtn(() => onChange(allWeeks[idx + 1]), !canBack, "Previous week", "‹")}
+      <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, color: "rgba(255,255,255,0.5)", minWidth: 110, textAlign: "center" }}>
+        {isCurrentWeek ? "This week" : formatWeekLabel(currentWeek)}
+      </span>
+      {navBtn(() => onChange(allWeeks[idx - 1]), !canForward, "Next week", "›")}
+    </div>
+  );
+}
+
+// ── Completion rate tile ──────────────────────────────────────────────
+function CompletionTile({ profiles, entries }) {
+  if (!entries.length) return null;
+  const rates = profiles.map(p => {
+    const e = entries.find(en => en.user_id === p.user_id);
+    if (!e || !e.tasks?.length) return null;
+    const done = e.tasks.filter(t => t.done).length;
+    const pct = Math.round((done / e.tasks.length) * 100);
+    return { name: p.name?.split(" ")[0], pct, done, total: e.tasks.length };
+  }).filter(Boolean);
+
+  if (!rates.length) return null;
+  const avg = Math.round(rates.reduce((s, r) => s + r.pct, 0) / rates.length);
+
+  return (
+    <div style={{ background: "#fff", borderRadius: 14, padding: "16px 18px", border: `1px solid ${C.gray200}`, boxShadow: "0 1px 4px rgba(28,43,222,0.08)" }}>
+      <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 700, color: C.gray400, letterSpacing: "0.09em", textTransform: "uppercase", marginBottom: 10 }}>Completion rate</div>
+      <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontWeight: 700, fontSize: 28, color: avg >= 70 ? C.success : avg >= 40 ? C.warning : C.error, letterSpacing: "-0.03em", lineHeight: 1, marginBottom: 8 }}>{avg}%</div>
+      {rates.map((r, i) => (
+        <div key={i} style={{ marginBottom: 6 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+            <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, color: C.gray600 }}>{r.name}</span>
+            <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, color: C.gray400 }}>{r.done}/{r.total}</span>
+          </div>
+          <div style={{ height: 3, background: C.gray100, borderRadius: 2 }}>
+            <div style={{ height: 3, borderRadius: 2, background: r.pct >= 70 ? C.success : r.pct >= 40 ? C.warning : C.error, width: `${r.pct}%`, transition: "width 0.4s" }}/>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
 function DashboardScreen({ user, profile, token, onSignOut, onAdmin, isAdmin }) {
   const mobile = useIsMobile();
   const [profiles, setProfiles] = useState([]);
   const [entries, setEntries] = useState([]);
   const [lastEntries, setLastEntries] = useState([]);
+  const [allWeeks, setAllWeeks] = useState([currentWeekOf()]);
+  const [selectedWeek, setSelectedWeek] = useState(currentWeekOf());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const weekOf = currentWeekOf();
-  const lastWeekOf = (() => {
-    const d = new Date();
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1) - 7;
-    const mon = new Date(d); mon.setDate(diff);
-    return mon.toISOString().split("T")[0];
+
+  const thisWeek = currentWeekOf();
+  const isHistoryView = selectedWeek !== thisWeek;
+
+  const prevWeek = (() => {
+    const d = new Date(selectedWeek + "T00:00:00");
+    d.setDate(d.getDate() - 7);
+    return d.toISOString().split("T")[0];
   })();
 
   const loadData = async () => {
-    const [profs, ents, lastEnts] = await Promise.all([
+    const [profs, ents, lastEnts, weeks] = await Promise.all([
       sb.getAllProfiles(token),
-      sb.getPulseEntries(token, weekOf),
-      sb.getPulseEntries(token, lastWeekOf),
+      sb.getPulseEntries(token, selectedWeek),
+      sb.getPulseEntries(token, prevWeek),
+      sb.getAllWeeks(token),
     ]);
     if (Array.isArray(profs)) setProfiles(profs);
     if (Array.isArray(ents)) setEntries(ents);
     if (Array.isArray(lastEnts)) setLastEntries(lastEnts);
+    if (Array.isArray(weeks)) {
+      const withCurrent = weeks.includes(thisWeek) ? weeks : [thisWeek, ...weeks];
+      setAllWeeks(withCurrent);
+    }
   };
 
-  useEffect(() => { (async () => { await loadData(); setLoading(false); })(); }, [token]);
+  useEffect(() => { (async () => { await loadData(); setLoading(false); })(); }, [token, selectedWeek]);
 
   useEffect(() => {
+    if (isHistoryView) return; // Don't auto-refresh history
     const onFocus = () => loadData();
     const onVisibility = () => { if (document.visibilityState === "visible") loadData(); };
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibility);
     return () => { window.removeEventListener("focus", onFocus); document.removeEventListener("visibilitychange", onVisibility); };
-  }, [token]);
+  }, [token, selectedWeek]);
 
   const handleRefresh = async () => { setRefreshing(true); await loadData(); setRefreshing(false); };
+  const handleWeekChange = (week) => { setSelectedWeek(week); setEntries([]); setLastEntries([]); };
 
   const getEntry = (uid) => entries.find(e => e.user_id === uid) || null;
   const getLastEntry = (uid) => lastEntries.find(e => e.user_id === uid) || null;
-  const submitted = profiles.filter(p => getEntry(p.user_id)).length;
+  const submitted = profiles.filter(p => getEntry(p.user_id)?.submitted_at).length;
   const blocked = profiles.filter(p => {
     const e = getEntry(p.user_id);
     return (e?.blockers || []).some(b => !(typeof b === "object" ? b.resolved : false));
@@ -909,7 +986,7 @@ function DashboardScreen({ user, profile, token, onSignOut, onAdmin, isAdmin }) 
   const getSpan = (p, i) => {
     const e = getEntry(p.user_id);
     if (i === 0) return "hero";
-    if ((e?.blockers||[]).length > 0) return "wide";
+    if ((e?.blockers||[]).filter(b => !(typeof b === "object" ? b.resolved : false)).length > 0) return "wide";
     if ((e?.tasks||[]).length >= 4) return "tall";
     return "small";
   };
@@ -934,16 +1011,16 @@ function DashboardScreen({ user, profile, token, onSignOut, onAdmin, isAdmin }) 
         justifyContent: "space-between",
         boxShadow: "0 2px 8px rgba(2,10,64,0.3)",
       }}>
-        <CloverLogo height={mobile?28:36} white/>
-        <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontWeight: 300, fontSize: mobile?13:15, color: "rgba(255,255,255,0.5)", marginLeft: 6, letterSpacing: "0.06em", textTransform: "uppercase" }}>Pulse</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <CloverLogo height={mobile?28:36} white/>
+          <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontWeight: 300, fontSize: mobile?13:15, color: "rgba(255,255,255,0.5)", marginLeft: 6, letterSpacing: "0.06em", textTransform: "uppercase" }}>Pulse</span>
+        </div>
+
+        {!mobile && allWeeks.length > 1 && (
+          <WeekNav currentWeek={selectedWeek} allWeeks={allWeeks} onChange={handleWeekChange}/>
+        )}
 
         <div style={{ display: "flex", alignItems: "center", gap: mobile?10:16 }}>
-          {!mobile && (
-            <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: "rgba(255,255,255,0.45)" }}>
-              {formatWeekLabel(weekOf)}
-            </span>
-          )}
-
           {/* Submission badge */}
           <div style={{
             display: "flex", alignItems: "center", gap: 5,
@@ -954,21 +1031,43 @@ function DashboardScreen({ user, profile, token, onSignOut, onAdmin, isAdmin }) 
             <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, fontWeight: 600, color: "#fff" }}>{submitted}/{profiles.length}</span>
           </div>
 
-          {/* Refresh */}
-          <button onClick={handleRefresh} style={{ background: "none", border: "none", cursor: "pointer", width: 34, height: 34, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.5)" }}>
-            {refreshing ? <Spinner color="rgba(255,255,255,0.6)" size={16}/> : (
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M13.5 8A5.5 5.5 0 112.5 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                <path d="M13.5 4v4h-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            )}
-          </button>
+          {/* Refresh — only show for current week */}
+          {!isHistoryView && (
+            <button onClick={handleRefresh} style={{ background: "none", border: "none", cursor: "pointer", width: 34, height: 34, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.5)" }}>
+              {refreshing ? <Spinner color="rgba(255,255,255,0.6)" size={16}/> : (
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M13.5 8A5.5 5.5 0 112.5 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  <path d="M13.5 4v4h-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              )}
+            </button>
+          )}
 
           <ProfileMenu user={user} profile={profile} onSignOut={onSignOut} isAdmin={isAdmin} onAdmin={onAdmin}/>
         </div>
       </header>
 
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: mobile?"16px 14px 60px":"32px 28px 80px" }}>
+
+        {/* Mobile week navigator */}
+        {mobile && allWeeks.length > 1 && (
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 14, background: C.darkest, borderRadius: 12, padding: "8px 16px" }}>
+            <WeekNav currentWeek={selectedWeek} allWeeks={allWeeks} onChange={handleWeekChange}/>
+          </div>
+        )}
+
+        {/* History mode banner */}
+        {isHistoryView && (
+          <div style={{ background: C.lavender, borderRadius: 12, padding: "10px 16px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: C.blue, fontWeight: 500 }}>
+              📅 Viewing {formatWeekLabel(selectedWeek)} — read only
+            </span>
+            <button onClick={() => handleWeekChange(thisWeek)} style={{ background: C.blue, border: "none", borderRadius: 8, padding: "5px 12px", color: "#fff", cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, fontWeight: 600 }}>
+              Back to this week
+            </button>
+          </div>
+        )}
+
         {profiles.length === 0 ? (
           <div style={{ textAlign: "center", padding: "80px 20px" }}>
             <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}><CloverLogo height={36}/></div>
@@ -983,23 +1082,24 @@ function DashboardScreen({ user, profile, token, onSignOut, onAdmin, isAdmin }) 
             </div>
             {profiles.map((p,i) => {
               const span = getSpan(p,i);
-              return <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={p.user_id===user?.id} isAdmin={isAdmin} token={token} weekOf={weekOf} onEntryUpdated={handleRefresh} mobile span={span}/>;
+              return <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={!isHistoryView && p.user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} mobile span={span}/>;
             })}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <WaTile/>
+              {!isHistoryView && <WaTile/>}
               <StatTile label="Done" value={`${doneTasks}/${allTasks.length}`} accent={C.blue}/>
+              <CompletionTile profiles={profiles} entries={entries}/>
             </div>
           </div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gridAutoRows: "minmax(170px,auto)", gap: 14 }}>
             {profiles.map((p,i) => {
               const span = getSpan(p,i);
-              return <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={p.user_id===user?.id} isAdmin={isAdmin} token={token} weekOf={weekOf} onEntryUpdated={handleRefresh} mobile={false} span={span}/>;
+              return <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={!isHistoryView && p.user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} mobile={false} span={span}/>;
             })}
             <StatTile label="Submitted" value={`${submitted}/${profiles.length}`} accent={C.blue} sub={submitted<profiles.length?`${profiles.length-submitted} missing`:"All in"}/>
             <StatTile label="Blockers" value={blocked} accent={blocked>0?C.pink:C.gray800} sub={blocked>0?"Needs attention":"All clear"}/>
-            <StatTile label="Tasks" value={allTasks.length} sub={`${doneTasks} done so far`} accent={C.blue}/>
-            <WaTile/>
+            <StatTile label="Tasks" value={allTasks.length} sub={`${doneTasks} done`} accent={C.blue}/>
+            {isHistoryView ? <CompletionTile profiles={profiles} entries={entries}/> : <WaTile/>}
           </div>
         )}
         <div style={{ textAlign: "center", marginTop: 44, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, color: C.gray200 }}>
