@@ -5,7 +5,7 @@
 // ─────────────────────────────────────────────────────────────────────
 
 // Must disable body parser to read raw body for signature verification
-export const config = { api: { bodyParser: false } };
+export const config = { api: { bodyParser: false }, maxDuration: 60 };
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -243,19 +243,17 @@ export default async function handler(req, res) {
   // URL verification challenge
   if (body.type === "url_verification") return res.status(200).json({ challenge: body.challenge });
 
-  // Acknowledge immediately — all processing happens below
-  res.status(200).send("ok");
-
-  if (body.type !== "event_callback") return;
+  // Process first, respond at the very end
+  if (body.type !== "event_callback") return res.status(200).send("ok");
   const event = body.event;
   console.log("Event:", event.type, event.subtype, event.channel_type);
 
   // Skip bot messages, non-DMs, and standalone file_shared events
-  if (event.type === "file_shared") return;
-  if (event.type !== "message") return;
-  if (event.subtype === "bot_message") return;
-  if (!event.user) return;
-  if (event.channel_type !== "im") return;
+  if (event.type === "file_shared") return res.status(200).send("ok");
+  if (event.type !== "message") return res.status(200).send("ok");
+  if (event.subtype === "bot_message") return res.status(200).send("ok");
+  if (!event.user) return res.status(200).send("ok");
+  if (event.channel_type !== "im") return res.status(200).send("ok");
 
   console.log("Processing DM from:", event.user);
 
@@ -278,7 +276,7 @@ export default async function handler(req, res) {
 
     if (!profile) {
       await sendDM(slackUserId, "👋 I don't recognise your account yet. Sign in at https://clover-pulse.vercel.app with your @rideclover.com Google account to get set up.");
-      return;
+      return res.status(200).send("ok");
     }
 
     const firstName = profile.name?.split(" ")[0] || "there";
@@ -304,7 +302,7 @@ export default async function handler(req, res) {
 
     if (!transcript) {
       await sendDM(slackUserId, "Send me a voice note or a text message with your weekly update and I'll take care of the rest. 🎙️");
-      return;
+      return res.status(200).send("ok");
     }
 
     const weekOf = currentWeekOf();
@@ -330,4 +328,6 @@ export default async function handler(req, res) {
     console.error("Processing error:", err);
     try { await sendDM(event.user, "Something went wrong. Try again in a moment."); } catch {}
   }
+
+  return res.status(200).send("ok");
 }
