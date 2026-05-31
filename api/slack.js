@@ -234,141 +234,100 @@ async function notifyAdminsOfBlockers(profile, blockers) {
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).send("Method not allowed");
 
-  // Read raw body for signature verification
   const rawBody = await getRawBody(req);
-  
-  // Verify Slack signature
   const valid = await verifySlackSignature(req, rawBody);
-  if (!valid) {
-    console.error("Signature verification failed");
-    return res.status(401).send("Invalid signature");
-  }
+  if (!valid) { console.error("Signature verification failed"); return res.status(401).send("Invalid signature"); }
 
-  // Parse body manually since we disabled bodyParser
   const body = JSON.parse(rawBody);
 
-  // Slack URL verification challenge
-  if (body.type === "url_verification") {
-    return res.status(200).json({ challenge: body.challenge });
+  // URL verification challenge
+  if (body.type === "url_verification") return res.status(200).json({ challenge: body.challenge });
+
+  // Acknowledge immediately — all processing happens below
+  res.status(200).send("ok");
+
+  if (body.type !== "event_callback") return;
+  const event = body.event;
+  console.log("Event:", event.type, event.subtype, event.channel_type);
+
+  // Skip bot messages, non-DMs, and standalone file_shared events
+  if (event.type === "file_shared") return;
+  if (event.type !== "message") return;
+  if (event.subtype === "bot_message") return;
+  if (!event.user) return;
+  if (event.channel_type !== "im") return;
+
+  console.log("Processing DM from:", event.user);
+
+  try {
+    const slackUserId = event.user;
+
+    // Look up profile
+    let profile = await getProfileBySlackId(slackUserId);
+    console.log("Profile by Slack ID:", profile?.name || "not found");
+
+    if (!profile) {
+      const email = await getSlackUserEmail(slackUserId);
+      console.log("Email:", email);
+      if (email) {
+        profile = await getProfileByEmail(email);
+        console.log("Profile by email:", profile?.name || "not found");
+        if (profile) await updateProfileSlackId(profile.user_id, slackUserId);
+      }
+    }
+
+    if (!profile) {
+      await sendDM(slackUserId, "👋 I don't recognise your account yet. Sign in at https://clover-pulse.vercel.app with your @rideclover.com Google account to get set up.");
+      return;
+    }
+
+    const firstName = profile.name?.split(" ")[0] || "there";
+    let transcript = null;
+
+    // Voice note
+    if (event.files?.length) {
+      const file = event.files[0];
+      const isAudio = file.mimetype?.startsWith("audio/") || file.filetype === "mp4";
+      if (isAudio && file.url_private) {
+        await sendDM(slackUserId, `Got your voice note ${firstName}, transcribing now... 🎙️`);
+        const audioBuffer = await downloadSlackFile(file.url_private);
+        transcript = await transcribeAudio(audioBuffer, file.mimetype || "audio/mp4");
+        console.log("Transcript:", transcript?.substring(0, 100));
+      }
+    }
+
+    // Text message
+    if (!transcript && event.text?.trim().length > 10) {
+      transcript = event.text.trim();
+      console.log("Text message:", transcript.substring(0, 100));
+    }
+
+    if (!transcript) {
+      await sendDM(slackUserId, "Send me a voice note or a text message with your weekly update and I'll take care of the rest. 🎙️");
+      return;
+    }
+
+    const weekOf = currentWeekOf();
+    const existing = await sbFetch(`pulse_entries?user_id=eq.${profile.user_id}&week_of=eq.${weekOf}&select=*`);
+    const existingEntry = Array.isArray(existing) ? existing[0] : null;
+
+    const parsed = await parseWithClaude(transcript, existingEntry);
+    console.log("Parsed tasks:", parsed.tasks?.length, "blockers:", parsed.blockers?.length);
+
+    await savePulseEntry(profile.user_id, weekOf, parsed);
+
+    if (parsed.blockers?.length) await notifyAdminsOfBlockers(profile, parsed.blockers);
+
+    const taskCount = parsed.tasks?.length || 0;
+    const blockerCount = parsed.blockers?.length || 0;
+    const blockerNote = blockerCount > 0 ? `\n⚠️ I've flagged ${blockerCount} blocker${blockerCount > 1 ? "s" : ""} to the team.` : "";
+
+    await sendDM(slackUserId,
+      `✅ Got it ${firstName}. *${taskCount} task${taskCount !== 1 ? "s" : ""}* logged for the week.${blockerNote}\n\nView the dashboard: https://clover-pulse.vercel.app`
+    );
+
+  } catch (err) {
+    console.error("Processing error:", err);
+    try { await sendDM(event.user, "Something went wrong. Try again in a moment."); } catch {}
   }
-
-  // Handle events
-  if (body.type === "event_callback") {
-    const event = body.event;
-    console.log("Event type:", event.type, "subtype:", event.subtype, "channel_type:", event.channel_type);
-
-    // Skip standalone file_shared events — handled via message.file_share
-    if (event.type === "file_shared") {
-      return res.status(200).send("ok");
-    }
-
-    // Only handle DMs, ignore bot messages
-    if (event.type !== "message" || event.subtype === "bot_message" || !event.user) {
-      console.log("Skipping — not a user message");
-      return res.status(200).send("ok");
-    }
-
-    // Skip the separate file_shared event — we handle files via the message event
-    if (event.type === "file_shared") {
-      return res.status(200).send("ok");
-    }
-
-    // Only handle DM channels
-    if (event.channel_type !== "im") {
-      console.log("Skipping — not a DM, channel_type:", event.channel_type);
-      return res.status(200).send("ok");
-    }
-
-    // Respond immediately to Slack to avoid timeout
-    res.status(200).json({ ok: true });
-
-    // Process asynchronously — use setImmediate to avoid Vercel cutting us off
-    setImmediate(async () => {
-    console.log("Processing message from Slack user:", event.user);
-
-    try {
-      const slackUserId = event.user;
-      console.log("Looking up profile for Slack user:", slackUserId);
-
-      // Look up profile by Slack ID first, then by email
-      let profile = await getProfileBySlackId(slackUserId);
-      console.log("Profile by Slack ID:", profile ? profile.name : "not found");
-
-      if (!profile) {
-        const email = await getSlackUserEmail(slackUserId);
-        console.log("Slack user email:", email);
-        if (email) {
-          profile = await getProfileByEmail(email);
-          console.log("Profile by email:", profile ? profile.name : "not found");
-          if (profile) await updateProfileSlackId(profile.user_id, slackUserId);
-        }
-      }
-
-      if (!profile) {
-        await sendDM(slackUserId,
-          "👋 I don't recognise your account yet. Sign in at https://clover-pulse.vercel.app with your @rideclover.com Google account to get set up."
-        );
-        return;
-      }
-
-      const firstName = profile.name?.split(" ")[0] || "there";
-      let transcript = null;
-
-      // Handle voice note / audio file
-      if (event.files?.length) {
-        const file = event.files[0];
-        const isAudio = file.mimetype?.startsWith("audio/") || file.filetype === "mp4";
-
-        if (isAudio && file.url_private) {
-          await sendDM(slackUserId, `Got your voice note ${firstName}, transcribing now...`);
-          const audioBuffer = await downloadSlackFile(file.url_private);
-          transcript = await transcribeAudio(audioBuffer, file.mimetype || "audio/mp4");
-        }
-      }
-
-      // Handle text message
-      if (!transcript && event.text && event.text.trim().length > 10) {
-        transcript = event.text.trim();
-      }
-
-      if (!transcript) {
-        await sendDM(slackUserId, "Send me a voice note or a text message with your weekly update and I'll take care of the rest. 🎙️");
-        return;
-      }
-
-      // Get existing entry for this week
-      const weekOf = currentWeekOf();
-      const existing = await sbFetch(`pulse_entries?user_id=eq.${profile.user_id}&week_of=eq.${weekOf}&select=*`);
-      const existingEntry = Array.isArray(existing) ? existing[0] : null;
-
-      // Parse with Claude
-      const parsed = await parseWithClaude(transcript, existingEntry);
-
-      // Save to Supabase
-      await savePulseEntry(profile.user_id, weekOf, parsed);
-
-      // Notify admins of any blockers
-      if (parsed.blockers?.length) {
-        await notifyAdminsOfBlockers(profile, parsed.blockers);
-      }
-
-      // Send confirmation
-      const taskCount = parsed.tasks?.length || 0;
-      const blockerCount = parsed.blockers?.length || 0;
-      const blockerNote = blockerCount > 0 ? `\n⚠️ I've flagged ${blockerCount} blocker${blockerCount > 1 ? "s" : ""} to the team.` : "";
-
-      await sendDM(slackUserId,
-        `✅ Got it ${firstName}. *${taskCount} task${taskCount !== 1 ? "s" : ""}* logged for the week.${blockerNote}\n\nView the dashboard: https://clover-pulse.vercel.app`
-      );
-
-    } catch (err) {
-      console.error("Slack handler error:", err);
-      try {
-        await sendDM(event.user, "Something went wrong processing your update. Try again in a moment.");
-      } catch {}
-    }
-    }); // end setImmediate
-  }
-
-  return res.status(200).send("ok");
 }
