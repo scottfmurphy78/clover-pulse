@@ -284,16 +284,18 @@ export default async function handler(req, res) {
 
     try {
       const slackUserId = event.user;
+      console.log("Looking up profile for Slack user:", slackUserId);
 
       // Look up profile by Slack ID first, then by email
       let profile = await getProfileBySlackId(slackUserId);
+      console.log("Profile by Slack ID:", profile ? profile.name : "not found");
 
       if (!profile) {
-        // Try to find by email
         const email = await getSlackUserEmail(slackUserId);
+        console.log("Slack user email:", email);
         if (email) {
           profile = await getProfileByEmail(email);
-          // Link their Slack ID for future lookups
+          console.log("Profile by email:", profile ? profile.name : "not found");
           if (profile) await updateProfileSlackId(profile.user_id, slackUserId);
         }
       }
