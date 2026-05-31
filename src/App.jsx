@@ -99,11 +99,14 @@ const sb = {
     return r.json();
   },
   async upsertPulseEntry(token, entry) {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/pulse_entries`, {
-      method: "POST",
-      headers: { ...this.h(token), "Prefer": "resolution=merge-duplicates,return=representation" },
-      body: JSON.stringify(entry),
-    });
+    const r = await fetch(
+      `${SUPABASE_URL}/rest/v1/pulse_entries?user_id=eq.${entry.user_id}&week_of=eq.${entry.week_of}`,
+      {
+        method: "PATCH",
+        headers: { ...this.h(token), "Prefer": "return=representation" },
+        body: JSON.stringify(entry),
+      }
+    );
     return r.json();
   },
 };
