@@ -2,7 +2,7 @@
 // Vercel serverless function — /api/slack
 // ─────────────────────────────────────────────────────────────────────
 
-export const config = { maxDuration: 60 };
+export const config = { maxDuration: 60, runtime: "nodejs" };
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -191,6 +191,7 @@ async function notifyAdminsOfBlockers(profile, blockers) {
 
 // ── MAIN HANDLER ──────────────────────────────────────────────────────
 export default async function handler(req, res) {
+  try {
   if (req.method !== "POST") return res.status(405).send("Method not allowed");
 
   console.log("=== SLACK REQUEST ===");
@@ -315,6 +316,10 @@ export default async function handler(req, res) {
   }
 
   return res.status(200).send("ok");
+  } catch (outerErr) {
+    console.error("=== OUTER ERROR ===", outerErr.message, outerErr.stack?.substring(0, 400));
+    return res.status(200).send("ok");
+  }
 }
 
 function currentWeekOf() {
