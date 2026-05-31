@@ -438,9 +438,15 @@ function MemberCard({ member, entry, lastEntry, isCurrentUser, isAdmin, token, w
 
   const resolveBlocker = async (index) => {
     const updated = blockers.filter((_, i) => i !== index);
+    console.log("Resolving blocker", index, "entry:", entry?.user_id, entry?.week_of, "updated blockers:", updated);
     setBlockers(updated);
     setSaving(true);
-    await sb.upsertPulseEntry(token, { ...entry, blockers: updated });
+    try {
+      const result = await sb.upsertPulseEntry(token, { ...entry, blockers: updated });
+      console.log("Resolve result:", JSON.stringify(result)?.substring(0, 200));
+    } catch (err) {
+      console.error("Resolve error:", err);
+    }
     setSaving(false);
     onEntryUpdated();
   };
@@ -495,13 +501,18 @@ function MemberCard({ member, entry, lastEntry, isCurrentUser, isAdmin, token, w
         ) : (
           <>
             {note && <p style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 14, color: "rgba(255,255,255,0.82)", fontStyle: "italic", lineHeight: 1.55, marginBottom: 18, fontWeight: 300 }}>"{note}"</p>}
-            {blockers.length > 0 && blockers.map((b, i) => (
-              <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "rgba(222,28,119,0.25)", borderRadius: 10, padding: "9px 12px", marginBottom: 12, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: "#ffb3d0", lineHeight: 1.45 }}>
-                <span style={{ flexShrink: 0 }}>⚠</span>
-                <span style={{ flex: 1 }}>{b}</span>
-                {canEdit && <button onClick={(e) => { e.stopPropagation(); resolveBlocker(i); }} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: 6, padding: "4px 10px", color: "#fff", cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0 }}>✓ Resolve</button>}
+            {blockers.length > 0 && (
+              <div style={{ marginBottom: 4 }}>
+                <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.38)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>Blockers</div>
+                {blockers.map((b, i) => (
+                  <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "rgba(222,28,119,0.25)", borderRadius: 10, padding: "9px 12px", marginBottom: 8, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: "#ffb3d0", lineHeight: 1.45 }}>
+                    <span style={{ flexShrink: 0 }}>⚠</span>
+                    <span style={{ flex: 1 }}>{b}</span>
+                    {canEdit && <button onClick={(e) => { e.stopPropagation(); resolveBlocker(i); }} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: 6, padding: "4px 10px", color: "#fff", cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0 }}>✓ Resolve</button>}
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
             {tasks.length > 0 && (
               <div style={{ marginBottom: 14 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
@@ -572,13 +583,18 @@ function MemberCard({ member, entry, lastEntry, isCurrentUser, isAdmin, token, w
           <ProgressBar tasks={tasks}/>
           {note && <p style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: C.gray600, fontStyle: "italic", lineHeight: 1.55, margin: "12px 0" }}>"{note}"</p>}
 
-          {isBlocked && blockers.map((b,i) => (
-            <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#FFF0F3", border: `1px solid #FFB3C0`, borderRadius: 10, padding: "9px 12px", marginBottom: 12, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12.5, color: C.error, lineHeight: 1.45 }}>
-              <span style={{ flexShrink: 0 }}>⚠</span>
-              <span style={{ flex: 1 }}>{b}</span>
-              {canEdit && <button onClick={(e) => { e.stopPropagation(); resolveBlocker(i); }} style={{ background: "#fff", border: `1.5px solid ${C.error}`, borderRadius: 6, padding: "4px 10px", color: C.error, cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0 }}>✓ Resolve</button>}
+          {isBlocked && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 700, color: `${C.pink}80`, letterSpacing: "0.09em", textTransform: "uppercase", marginBottom: 6 }}>Blockers</div>
+              {blockers.map((b,i) => (
+                <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#FFF0F3", border: `1px solid #FFB3C0`, borderRadius: 10, padding: "9px 12px", marginBottom: 6, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12.5, color: C.error, lineHeight: 1.45 }}>
+                  <span style={{ flexShrink: 0 }}>⚠</span>
+                  <span style={{ flex: 1 }}>{b}</span>
+                  {canEdit && <button onClick={(e) => { e.stopPropagation(); resolveBlocker(i); }} style={{ background: "#fff", border: `1.5px solid ${C.error}`, borderRadius: 6, padding: "4px 10px", color: C.error, cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0 }}>✓ Resolve</button>}
+                </div>
+              ))}
             </div>
-          ))}
+          )}
 
           {tasks.length > 0 && (
             <>
