@@ -155,7 +155,9 @@ Rules: tasks = this week. completed_last = last week. blockers = anything blocki
   if (!r.ok) throw new Error(`Claude error: ${JSON.stringify(data)}`);
   const text = data.content?.[0]?.text || "{}";
   console.log("Claude raw response:", text.substring(0, 200));
-  const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
+  const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+  console.log("Cleaned response:", cleaned.substring(0, 200));
+  const parsed = JSON.parse(cleaned);
   console.log("Parsed:", parsed.tasks?.length, "tasks,", parsed.blockers?.length, "blockers");
   return parsed;
 }
