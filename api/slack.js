@@ -100,10 +100,8 @@ async function slackPost(method, body) {
   return r.json();
 }
 
-async function sendDM(slackUserId, text) {
-  const open = await slackPost("conversations.open", { users: slackUserId });
-  if (!open.ok) throw new Error(`Failed to open DM: ${open.error}`);
-  return slackPost("chat.postMessage", { channel: open.channel.id, text });
+async function postToChannel(channelId, text) {
+  return slackPost("chat.postMessage", { channel: channelId, text });
 }
 
 async function getSlackUserEmail(slackUserId) {
@@ -276,11 +274,12 @@ export default async function handler(req, res) {
 
     if (!profile) {
       console.log("No profile found, sending signup DM to:", slackUserId);
-      await sendDM(slackUserId, "👋 I don't recognise your account yet. Sign in at https://clover-pulse.vercel.app with your @rideclover.com Google account to get set up.");
+      await postToChannel(event.channel, "👋 I don't recognise your account yet. Sign in at https://clover-pulse.vercel.app with your @rideclover.com Google account to get set up.");
       return res.status(200).send("ok");
     }
 
-    console.log("Found profile:", profile.name, "slack_user_id:", profile.slack_user_id, "sending DM to:", slackUserId);
+    console.log("Found profile:", profile.name, "user_id:", profile.user_id);
+    console.log("Sending confirmation to channel:", event.channel);
 
     const firstName = profile.name?.split(" ")[0] || "there";
     let transcript = null;
@@ -290,7 +289,7 @@ export default async function handler(req, res) {
       const file = event.files[0];
       const isAudio = file.mimetype?.startsWith("audio/") || file.filetype === "mp4";
       if (isAudio && file.url_private) {
-        await sendDM(slackUserId, `Got your voice note ${firstName}, transcribing now... 🎙️`);
+        await postToChannel(event.channel, `Got your voice note ${firstName}, transcribing now... 🎙️`);
         const audioBuffer = await downloadSlackFile(file.url_private);
         transcript = await transcribeAudio(audioBuffer, file.mimetype || "audio/mp4");
         console.log("Transcript:", transcript?.substring(0, 100));
@@ -304,7 +303,7 @@ export default async function handler(req, res) {
     }
 
     if (!transcript) {
-      await sendDM(slackUserId, "Send me a voice note or a text message with your weekly update and I'll take care of the rest. 🎙️");
+      await postToChannel(event.channel, "Send me a voice note or a text message with your weekly update and I'll take care of the rest. 🎙️");
       return res.status(200).send("ok");
     }
 
@@ -315,7 +314,8 @@ export default async function handler(req, res) {
     const parsed = await parseWithClaude(transcript, existingEntry);
     console.log("Parsed tasks:", parsed.tasks?.length, "blockers:", parsed.blockers?.length);
 
-    await savePulseEntry(profile.user_id, weekOf, parsed);
+    const saved = await savePulseEntry(profile.user_id, weekOf, parsed);
+    console.log("Saved entry:", JSON.stringify(saved)?.substring(0, 200));
 
     if (parsed.blockers?.length) await notifyAdminsOfBlockers(profile, parsed.blockers);
 
@@ -323,13 +323,13 @@ export default async function handler(req, res) {
     const blockerCount = parsed.blockers?.length || 0;
     const blockerNote = blockerCount > 0 ? `\n⚠️ I've flagged ${blockerCount} blocker${blockerCount > 1 ? "s" : ""} to the team.` : "";
 
-    await sendDM(slackUserId,
+    await postToChannel(event.channel,
       `✅ Got it ${firstName}. *${taskCount} task${taskCount !== 1 ? "s" : ""}* logged for the week.${blockerNote}\n\nView the dashboard: https://clover-pulse.vercel.app`
     );
 
   } catch (err) {
     console.error("Processing error:", err);
-    try { await sendDM(event.user, "Something went wrong. Try again in a moment."); } catch {}
+    try { await postToChannel(event.channel, "Something went wrong. Try again in a moment."); } catch {}
   }
 
   return res.status(200).send("ok");
