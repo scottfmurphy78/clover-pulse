@@ -279,7 +279,11 @@ export default async function handler(req, res) {
       return res.status(200).send("ok");
     }
 
-    res.status(200).send("ok"); // Respond immediately to Slack
+    // Respond immediately to Slack to avoid timeout
+    res.status(200).json({ ok: true });
+
+    // Process asynchronously — use setImmediate to avoid Vercel cutting us off
+    setImmediate(async () => {
     console.log("Processing message from Slack user:", event.user);
 
     try {
@@ -360,9 +364,10 @@ export default async function handler(req, res) {
     } catch (err) {
       console.error("Slack handler error:", err);
       try {
-        await sendDM(body.event?.user, "Something went wrong processing your update. Try again in a moment.");
+        await sendDM(event.user, "Something went wrong processing your update. Try again in a moment.");
       } catch {}
     }
+    }); // end setImmediate
   }
 
   return res.status(200).send("ok");
