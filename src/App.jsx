@@ -337,6 +337,44 @@ function LastWeek({ items, onLight = true }) {
   );
 }
 
+// ── Hero task row — inline edit on dark blue background ───────────────
+function HeroTaskRow({ task, onToggle, onEdit, onDelete, isCurrentUser }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(task.text);
+
+  const save = () => {
+    if (val.trim() && val !== task.text) onEdit(task.id, val.trim());
+    setEditing(false);
+  };
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", opacity: task.done ? 0.35 : 1, transition: "opacity 0.18s" }}>
+      <div onClick={() => onToggle(task.id)} style={{ width: 18, height: 18, borderRadius: 4, flexShrink: 0, cursor: "pointer", border: task.done ? "none" : "2px solid rgba(255,255,255,0.4)", background: task.done ? "rgba(255,255,255,0.9)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s" }}>
+        {task.done && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l2.5 2.5L9 1" stroke={C.blue} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+      </div>
+      {editing && isCurrentUser ? (
+        <input
+          autoFocus value={val}
+          onChange={e => setVal(e.target.value)}
+          onBlur={save}
+          onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
+          style={{ flex: 1, background: "rgba(255,255,255,0.15)", border: "1.5px solid rgba(255,255,255,0.5)", borderRadius: 6, padding: "3px 8px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: "#fff", outline: "none" }}
+        />
+      ) : (
+        <span
+          onClick={() => isCurrentUser && setEditing(true)}
+          style={{ flex: 1, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: "#fff", lineHeight: 1.45, cursor: isCurrentUser ? "text" : "default", textDecoration: task.done ? "line-through" : "none", opacity: task.done ? 0.5 : 1 }}
+        >
+          {task.text}
+        </span>
+      )}
+      {isCurrentUser && (
+        <button onClick={() => onDelete(task.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 4px", color: "rgba(255,255,255,0.3)", fontSize: 14, lineHeight: 1 }}>×</button>
+      )}
+    </div>
+  );
+}
+
 // ── Member card ───────────────────────────────────────────────────────
 function MemberCard({ member, entry, isCurrentUser, token, weekOf, onEntryUpdated, mobile, span }) {
   const rawTasks = entry?.tasks || [];
@@ -443,13 +481,7 @@ function MemberCard({ member, entry, isCurrentUser, token, weekOf, onEntryUpdate
             )}
             <div style={{ flex: 1 }}>
               {tasks.map(t => (
-                <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", opacity: t.done ? 0.35 : 1 }}>
-                  <div onClick={() => handleToggle(t.id)} style={{ width: 18, height: 18, borderRadius: 4, flexShrink: 0, cursor: "pointer", border: t.done ? "none" : "2px solid rgba(255,255,255,0.4)", background: t.done ? "rgba(255,255,255,0.9)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s" }}>
-                    {t.done && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l2.5 2.5L9 1" stroke={C.blue} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                  </div>
-                  <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: "#fff", lineHeight: 1.45, textDecoration: t.done ? "line-through" : "none", opacity: t.done ? 0.5 : 1 }}>{t.text}</span>
-                  {saving && <Spinner color="rgba(255,255,255,0.5)" size={12}/>}
-                </div>
+                <HeroTaskRow key={t.id} task={t} onToggle={handleToggle} onEdit={handleEdit} onDelete={handleDelete} isCurrentUser={isCurrentUser}/>
               ))}
               {isCurrentUser && (
                 addingTask ? (
