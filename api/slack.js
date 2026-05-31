@@ -73,10 +73,24 @@ async function downloadSlackFile(url) {
   return Buffer.from(await r.arrayBuffer());
 }
 
-async function transcribeAudio(audioBuffer, mimeType = "audio/webm") {
-  const ext = mimeType.includes("mp4") ? "mp4" : mimeType.includes("mpeg") ? "mp3" : "webm";
+async function transcribeAudio(audioBuffer, mimeType = "audio/webm", fileType = "") {
+  // Map Slack file types to Whisper-supported formats
+  let ext = "webm";
+  if (fileType === "m4a" || mimeType.includes("m4a") || mimeType.includes("mp4") || mimeType.includes("aac")) ext = "m4a";
+  else if (fileType === "mp3" || mimeType.includes("mpeg")) ext = "mp3";
+  else if (fileType === "wav" || mimeType.includes("wav")) ext = "wav";
+  else if (fileType === "ogg" || mimeType.includes("ogg")) ext = "ogg";
+  else if (fileType === "webm" || mimeType.includes("webm")) ext = "webm";
+  
+  // Slack voice notes are often webm — convert mime type accordingly
+  const whisperMime = ext === "m4a" ? "audio/mp4" : 
+                      ext === "mp3" ? "audio/mpeg" :
+                      ext === "wav" ? "audio/wav" :
+                      ext === "ogg" ? "audio/ogg" : "audio/webm";
+
+  console.log("Transcribing:", ext, whisperMime, "size:", audioBuffer.length);
   const boundary = "----WhisperBoundary" + Date.now();
-  const beforeFile = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.${ext}"\r\nContent-Type: ${mimeType}\r\n\r\n`);
+  const beforeFile = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.${ext}"\r\nContent-Type: ${whisperMime}\r\n\r\n`);
   const afterFile = Buffer.from(`\r\n--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n--${boundary}\r\nContent-Disposition: form-data; name="language"\r\n\r\nen\r\n--${boundary}--\r\n`);
   const body = Buffer.concat([beforeFile, audioBuffer, afterFile]);
   const r = await fetch("https://api.openai.com/v1/audio/transcriptions", {
@@ -224,11 +238,11 @@ export default async function handler(req, res) {
     if (event.files?.length) {
       const file = event.files[0];
       console.log("File:", file.mimetype, file.filetype);
-      const isAudio = file.mimetype?.startsWith("audio/") || file.filetype === "mp4";
+      const isAudio = file.mimetype?.startsWith("audio/") || file.filetype === "mp4" || file.filetype === "m4a" || file.filetype === "webm";
       if (isAudio && file.url_private) {
         await postToChannel(event.channel, `Got your voice note ${firstName}, transcribing now... 🎙️`);
         const buf = await downloadSlackFile(file.url_private);
-        transcript = await transcribeAudio(buf, file.mimetype || "audio/mp4");
+        transcript = await transcribeAudio(buf, file.mimetype || "audio/webm", file.filetype || "");
       }
     }
 
