@@ -131,25 +131,19 @@ const ADMIN_EMAILS = ["scott@rideclover.com","antonio@rideclover.com"];
 
 // ── Design atoms ──────────────────────────────────────────────────────
 
-// Real Clover logo as inline SVG (clover mark + wordmark)
+// Real Clover logo — PNG, white-filtered on dark backgrounds
 function CloverLogo({ height = 28, white = false }) {
-  const color = white ? "#FFFFFF" : C.blue;
   return (
-    <svg height={height} viewBox="0 0 220 60" fill="none" xmlns="http://www.w3.org/2000/svg">
-      {/* Four-petal clover mark */}
-      <circle cx="22" cy="10" r="9" fill={color}/>
-      <circle cx="22" cy="34" r="9" fill={color}/>
-      <circle cx="10" cy="22" r="9" fill={color}/>
-      <circle cx="34" cy="22" r="9" fill={color}/>
-      <circle cx="22" cy="22" r="5" fill={color}/>
-      {/* Starburst lines */}
-      <line x1="22" y1="14" x2="22" y2="30" stroke={white?"rgba(255,255,255,0.4)":"rgba(28,43,222,0.3)"} strokeWidth="1"/>
-      <line x1="14" y1="22" x2="30" y2="22" stroke={white?"rgba(255,255,255,0.4)":"rgba(28,43,222,0.3)"} strokeWidth="1"/>
-      <line x1="16" y1="16" x2="28" y2="28" stroke={white?"rgba(255,255,255,0.4)":"rgba(28,43,222,0.3)"} strokeWidth="1"/>
-      <line x1="28" y1="16" x2="16" y2="28" stroke={white?"rgba(255,255,255,0.4)":"rgba(28,43,222,0.3)"} strokeWidth="1"/>
-      {/* Wordmark */}
-      <text x="52" y="32" fontFamily="'Poppins',Arial,sans-serif" fontWeight="700" fontSize="26" fill={color} letterSpacing="-0.5">clover</text>
-    </svg>
+    <img
+      src="/clover-logo.png"
+      alt="Clover"
+      style={{
+        height,
+        width: "auto",
+        display: "block",
+        filter: white ? "brightness(0) invert(1)" : "none",
+      }}
+    />
   );
 }
 
@@ -617,7 +611,7 @@ function LoginScreen() {
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 36 }}>
           <CloverLogo height={32}/>
         </div>
-        <h1 style={{ fontFamily: "'Poppins',Arial,sans-serif", fontWeight: 700, fontSize: 22, color: C.gray800, letterSpacing: "-0.02em", marginBottom: 8 }}>Good morning.</h1>
+        <h1 style={{ fontFamily: "'Poppins',Arial,sans-serif", fontWeight: 700, fontSize: 22, color: C.gray800, letterSpacing: "-0.02em", marginBottom: 8 }}>{(() => { const h = new Date().getHours(); return h < 12 ? "Good morning." : h < 18 ? "Good afternoon." : "Good evening."; })()}</h1>
         <p style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 14, color: C.gray400, marginBottom: 36, lineHeight: 1.55 }}>
           Sign in with your <strong style={{ color: C.gray800 }}>@rideclover.com</strong> Google account to see your team's week.
         </p>
