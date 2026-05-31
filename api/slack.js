@@ -14,6 +14,20 @@ const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET;
 
+// Simple in-memory deduplication — prevents processing the same event twice
+const processedEvents = new Set();
+function isDuplicate(eventId) {
+  if (!eventId) return false;
+  if (processedEvents.has(eventId)) return true;
+  processedEvents.add(eventId);
+  // Keep set small — clear old entries after 1000
+  if (processedEvents.size > 1000) {
+    const first = processedEvents.values().next().value;
+    processedEvents.delete(first);
+  }
+  return false;
+}
+
 // Read raw body from request stream
 async function getRawBody(req) {
   return new Promise((resolve, reject) => {
@@ -243,13 +257,22 @@ export default async function handler(req, res) {
 
   // Process first, respond at the very end
   if (body.type !== "event_callback") return res.status(200).send("ok");
-  const event = body.event;
-  console.log("Event:", event.type, event.subtype, event.channel_type);
 
-  // Skip bot messages, non-DMs, and standalone file_shared events
+  // Deduplicate — ignore events we've already processed
+  if (isDuplicate(body.event_id)) {
+    console.log("Duplicate event, skipping:", body.event_id);
+    return res.status(200).send("ok");
+  }
+
+  const event = body.event;
+  console.log("Event:", event.type, event.subtype, event.channel_type, "bot_id:", event.bot_id);
+
+  // Skip ALL bot messages including our own — critical to prevent loops
+  if (event.bot_id) return res.status(200).send("ok");
   if (event.type === "file_shared") return res.status(200).send("ok");
   if (event.type !== "message") return res.status(200).send("ok");
   if (event.subtype === "bot_message") return res.status(200).send("ok");
+  if (event.subtype === "message_changed") return res.status(200).send("ok");
   if (!event.user) return res.status(200).send("ok");
   if (event.channel_type !== "im") return res.status(200).send("ok");
 
