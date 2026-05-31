@@ -269,15 +269,18 @@ export default async function handler(req, res) {
       console.log("Email:", email);
       if (email) {
         profile = await getProfileByEmail(email);
-        console.log("Profile by email:", profile?.name || "not found");
+        console.log("Profile by email:", profile?.name || "not found", "user_id:", profile?.user_id);
         if (profile) await updateProfileSlackId(profile.user_id, slackUserId);
       }
     }
 
     if (!profile) {
+      console.log("No profile found, sending signup DM to:", slackUserId);
       await sendDM(slackUserId, "👋 I don't recognise your account yet. Sign in at https://clover-pulse.vercel.app with your @rideclover.com Google account to get set up.");
       return res.status(200).send("ok");
     }
+
+    console.log("Found profile:", profile.name, "slack_user_id:", profile.slack_user_id, "sending DM to:", slackUserId);
 
     const firstName = profile.name?.split(" ")[0] || "there";
     let transcript = null;
