@@ -111,16 +111,23 @@ Rules: tasks=this week, completed_last=last week, blockers=blocking items. Short
   return JSON.parse(text);
 }
 
-async function savePulseEntry(userId, weekOf, parsed) {
-  console.log("Saving for user:", userId, "week:", weekOf, "tasks:", parsed.tasks?.length);
+async function savePulseEntry(userId, weekOf, parsed, existingEntry) {
+  console.log("Saving for user:", userId, "week:", weekOf, "tasks:", parsed.tasks?.length, "existing:", !!existingEntry);
+  const payload = {
+    user_id: userId, week_of: weekOf,
+    note: parsed.note, tasks: parsed.tasks,
+    completed_last: parsed.completed_last, blockers: parsed.blockers,
+    submitted_at: new Date().toISOString(),
+  };
+  if (existingEntry) {
+    return sbFetch(`pulse_entries?user_id=eq.${userId}&week_of=eq.${weekOf}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  }
   return sbFetch("pulse_entries", {
     method: "POST",
-    body: JSON.stringify({
-      user_id: userId, week_of: weekOf,
-      note: parsed.note, tasks: parsed.tasks,
-      completed_last: parsed.completed_last, blockers: parsed.blockers,
-      submitted_at: new Date().toISOString(),
-    }),
+    body: JSON.stringify(payload),
   });
 }
 
@@ -241,7 +248,7 @@ export default async function handler(req, res) {
     console.log("Existing entry:", existingEntry ? "yes" : "no");
 
     const parsed = await parseWithClaude(transcript, existingEntry);
-    const saved = await savePulseEntry(profile.user_id, weekOf, parsed);
+    const saved = await savePulseEntry(profile.user_id, weekOf, parsed, existingEntry);
     console.log("Saved:", JSON.stringify(saved)?.substring(0, 150));
 
     if (parsed.blockers?.length) await notifyAdminsOfBlockers(profile, parsed.blockers);
