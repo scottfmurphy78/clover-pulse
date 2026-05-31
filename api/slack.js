@@ -196,17 +196,9 @@ export default async function handler(req, res) {
   try {
   if (req.method !== "POST") return res.status(405).send("Method not allowed");
 
-  console.log("=== SLACK REQUEST ===");
-  console.log("Content-Type:", req.headers["content-type"]);
-  console.log("req.body type:", typeof req.body, "value:", JSON.stringify(req.body)?.substring(0, 200));
-
-  if (!req.body) {
-    console.log("ERROR: req.body is empty — Vercel not parsing JSON");
-    return res.status(200).send("ok");
-  }
-
-  const body = req.body;
-  console.log("Body type:", body?.type, "event_id:", body?.event_id);
+  console.log("=== SLACK REQUEST START ===");
+  const body = req.body || {};
+  console.log("=== BODY PARSED ===", body?.type, body?.event_id);
 
   if (body.type === "url_verification") {
     console.log("URL verification challenge");
