@@ -4,12 +4,25 @@
 // Audio → Whisper → Claude → Supabase → Slack confirmation
 // ─────────────────────────────────────────────────────────────────────
 
+// Must disable body parser to read raw body for signature verification
+export const config = { api: { bodyParser: false } };
+
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET;
+
+// Read raw body from request stream
+async function getRawBody(req) {
+  return new Promise((resolve, reject) => {
+    let data = "";
+    req.on("data", chunk => { data += chunk; });
+    req.on("end", () => resolve(data));
+    req.on("error", reject);
+  });
+}
 
 // ── Verify Slack request signature ────────────────────────────────────
 async function verifySlackSignature(req, rawBody) {
@@ -221,14 +234,18 @@ async function notifyAdminsOfBlockers(profile, blockers) {
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).send("Method not allowed");
 
-  // Get raw body for signature verification
-  const rawBody = JSON.stringify(req.body);
-
+  // Read raw body for signature verification
+  const rawBody = await getRawBody(req);
+  
   // Verify Slack signature
   const valid = await verifySlackSignature(req, rawBody);
-  if (!valid) return res.status(401).send("Invalid signature");
+  if (!valid) {
+    console.error("Signature verification failed");
+    return res.status(401).send("Invalid signature");
+  }
 
-  const body = req.body;
+  // Parse body manually since we disabled bodyParser
+  const body = JSON.parse(rawBody);
 
   // Slack URL verification challenge
   if (body.type === "url_verification") {
