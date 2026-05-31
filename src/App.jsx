@@ -437,8 +437,11 @@ function MemberCard({ member, entry, lastEntry, isCurrentUser, isAdmin, token, w
   };
 
   const resolveBlocker = async (index) => {
-    const updated = blockers.filter((_, i) => i !== index);
-    console.log("Resolving blocker", index, "entry:", entry?.user_id, entry?.week_of, "updated blockers:", updated);
+    const updated = blockers.map((b, i) => i === index
+      ? (typeof b === "object" ? { ...b, resolved: true } : { text: b, resolved: true })
+      : (typeof b === "object" ? b : { text: b, resolved: false })
+    );
+    console.log("Resolving blocker", index, "updated:", updated);
     setBlockers(updated);
     setSaving(true);
     try {
@@ -504,13 +507,18 @@ function MemberCard({ member, entry, lastEntry, isCurrentUser, isAdmin, token, w
             {blockers.length > 0 && (
               <div style={{ marginBottom: 4 }}>
                 <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.38)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>Blockers</div>
-                {blockers.map((b, i) => (
-                  <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "rgba(222,28,119,0.25)", borderRadius: 10, padding: "9px 12px", marginBottom: 8, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: "#ffb3d0", lineHeight: 1.45 }}>
-                    <span style={{ flexShrink: 0 }}>⚠</span>
-                    <span style={{ flex: 1 }}>{b}</span>
-                    {canEdit && <button onClick={(e) => { e.stopPropagation(); resolveBlocker(i); }} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: 6, padding: "4px 10px", color: "#fff", cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0 }}>✓ Resolve</button>}
-                  </div>
-                ))}
+                {blockers.map((b, i) => {
+                  const text = typeof b === "object" ? b.text : b;
+                  const resolved = typeof b === "object" ? b.resolved : false;
+                  return (
+                    <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", background: resolved ? "rgba(255,255,255,0.05)" : "rgba(222,28,119,0.25)", borderRadius: 10, padding: "9px 12px", marginBottom: 8, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: resolved ? "rgba(255,255,255,0.3)" : "#ffb3d0", lineHeight: 1.45, transition: "all 0.2s" }}>
+                      <span style={{ flexShrink: 0 }}>{resolved ? "✓" : "⚠"}</span>
+                      <span style={{ flex: 1, textDecoration: resolved ? "line-through" : "none" }}>{text}</span>
+                      {canEdit && !resolved && <button onClick={(e) => { e.stopPropagation(); resolveBlocker(i); }} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: 6, padding: "6px 12px", color: "#fff", cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0, position: "relative", zIndex: 10, minWidth: 80, textAlign: "center" }}>✓ Resolve</button>}
+                      {resolved && <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, color: "rgba(255,255,255,0.3)", fontWeight: 600, whiteSpace: "nowrap" }}>Resolved</span>}
+                    </div>
+                  );
+                })}
               </div>
             )}
             {tasks.length > 0 && (
@@ -586,13 +594,18 @@ function MemberCard({ member, entry, lastEntry, isCurrentUser, isAdmin, token, w
           {isBlocked && (
             <div style={{ marginBottom: 12 }}>
               <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 700, color: `${C.pink}80`, letterSpacing: "0.09em", textTransform: "uppercase", marginBottom: 6 }}>Blockers</div>
-              {blockers.map((b,i) => (
-                <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#FFF0F3", border: `1px solid #FFB3C0`, borderRadius: 10, padding: "9px 12px", marginBottom: 6, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12.5, color: C.error, lineHeight: 1.45 }}>
-                  <span style={{ flexShrink: 0 }}>⚠</span>
-                  <span style={{ flex: 1 }}>{b}</span>
-                  {canEdit && <button onClick={(e) => { e.stopPropagation(); resolveBlocker(i); }} style={{ background: "#fff", border: `1.5px solid ${C.error}`, borderRadius: 6, padding: "4px 10px", color: C.error, cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0 }}>✓ Resolve</button>}
-                </div>
-              ))}
+              {blockers.map((b,i) => {
+                const text = typeof b === "object" ? b.text : b;
+                const resolved = typeof b === "object" ? b.resolved : false;
+                return (
+                  <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", background: resolved ? C.gray50 : "#FFF0F3", border: `1px solid ${resolved ? C.gray200 : "#FFB3C0"}`, borderRadius: 10, padding: "9px 12px", marginBottom: 6, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12.5, color: resolved ? C.gray400 : C.error, lineHeight: 1.45, transition: "all 0.2s" }}>
+                    <span style={{ flexShrink: 0 }}>{resolved ? "✓" : "⚠"}</span>
+                    <span style={{ flex: 1, textDecoration: resolved ? "line-through" : "none" }}>{text}</span>
+                    {canEdit && !resolved && <button onClick={(e) => { e.stopPropagation(); resolveBlocker(i); }} style={{ background: "#fff", border: `1.5px solid ${C.error}`, borderRadius: 6, padding: "6px 12px", color: C.error, cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0, position: "relative", zIndex: 10, minWidth: 80, textAlign: "center" }}>✓ Resolve</button>}
+                    {resolved && <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, color: C.gray400, fontWeight: 600, whiteSpace: "nowrap" }}>Resolved</span>}
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -886,7 +899,10 @@ function DashboardScreen({ user, profile, token, onSignOut, onAdmin, isAdmin }) 
   const getEntry = (uid) => entries.find(e => e.user_id === uid) || null;
   const getLastEntry = (uid) => lastEntries.find(e => e.user_id === uid) || null;
   const submitted = profiles.filter(p => getEntry(p.user_id)).length;
-  const blocked = profiles.filter(p => (getEntry(p.user_id)?.blockers||[]).length > 0).length;
+  const blocked = profiles.filter(p => {
+    const e = getEntry(p.user_id);
+    return (e?.blockers || []).some(b => !(typeof b === "object" ? b.resolved : false));
+  }).length;
   const allTasks = entries.flatMap(e => e.tasks||[]);
   const doneTasks = allTasks.filter(t => t.done).length;
 
