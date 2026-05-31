@@ -463,11 +463,16 @@ function MemberCard({ member, entry, isCurrentUser, token, weekOf, onEntryUpdate
         {!submitted ? (
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8 }}>
             <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: "rgba(255,255,255,0.4)" }}>No update yet this week</div>
-            <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, color: "rgba(255,255,255,0.25)" }}>Voice note to +1 415 523 8886</div>
+            <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, color: "rgba(255,255,255,0.25)" }}>DM the Clover Pulse bot on Slack</div>
           </div>
         ) : (
           <>
             {note && <p style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 14, color: "rgba(255,255,255,0.82)", fontStyle: "italic", lineHeight: 1.55, marginBottom: 18, fontWeight: 300 }}>"{note}"</p>}
+            {blockers.length > 0 && blockers.map((b, i) => (
+              <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "rgba(222,28,119,0.25)", borderRadius: 10, padding: "9px 12px", marginBottom: 12, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: "#ffb3d0", lineHeight: 1.45 }}>
+                <span style={{ flexShrink: 0 }}>⚠</span><span>{b}</span>
+              </div>
+            ))}
             {tasks.length > 0 && (
               <div style={{ marginBottom: 14 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
@@ -530,7 +535,7 @@ function MemberCard({ member, entry, isCurrentUser, token, weekOf, onEntryUpdate
       {!submitted ? (
         <div style={{ flex: 1, display: "flex", alignItems: "flex-end" }}>
           <div style={{ background: C.gray50, borderRadius: 10, padding: "8px 12px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, color: C.gray400, lineHeight: 1.4, width: "100%" }}>
-            No update yet — voice note to <span style={{ color: C.blue, fontWeight: 600 }}>+1 415 523 8886</span>
+            No update yet — DM <span style={{ color: C.blue, fontWeight: 600 }}>Clover Pulse</span> on Slack
           </div>
         </div>
       ) : (
@@ -594,12 +599,12 @@ function StatTile({ label, value, accent, sub }) {
 function WaTile() {
   return (
     <div style={{ background: "#fff", borderRadius: 14, padding: "18px 20px", border: `1px solid ${C.gray200}`, boxShadow: "0 1px 4px rgba(28,43,222,0.08)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-      <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#25D366", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 10 }}>
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.119.554 4.107 1.523 5.83L.057 23.885a.5.5 0 00.611.611l6.055-1.466A11.945 11.945 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.818 9.818 0 01-5.006-1.372l-.36-.213-3.733.904.919-3.658-.234-.376A9.818 9.818 0 012.182 12C2.182 6.58 6.58 2.182 12 2.182S21.818 6.58 21.818 12 17.42 21.818 12 21.818z"/></svg>
+      <div style={{ width: 34, height: 34, borderRadius: 10, background: "#4A154B", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 10 }}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zm10.122 2.521a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.268 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zm-2.523 10.122a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.268a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z"/></svg>
       </div>
       <div>
-        <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontWeight: 600, fontSize: 13, color: C.gray800 }}>Voice note your update</div>
-        <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, color: C.gray400, marginTop: 3 }}>Mon · 10 AM · <span style={{ color: C.blue, fontWeight: 600 }}>+1 415 523 8886</span></div>
+        <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontWeight: 600, fontSize: 13, color: C.gray800 }}>Send your Monday update</div>
+        <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, color: C.gray400, marginTop: 3 }}>DM <span style={{ color: C.blue, fontWeight: 600 }}>Clover Pulse</span> on Slack · before 9:30am</div>
       </div>
     </div>
   );
