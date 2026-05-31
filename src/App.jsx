@@ -135,14 +135,9 @@ const ADMIN_EMAILS = ["scott@rideclover.com","antonio@rideclover.com"];
 function CloverLogo({ height = 28, white = false }) {
   return (
     <img
-      src="/clover-logo.png"
+      src={white ? "/clover-logo-white.png" : "/clover-logo.png"}
       alt="Clover"
-      style={{
-        height,
-        width: "auto",
-        display: "block",
-        filter: white ? "brightness(0) invert(1)" : "none",
-      }}
+      style={{ height, width: "auto", display: "block" }}
     />
   );
 }
@@ -315,24 +310,39 @@ function TaskRow({ task, onToggle, onEdit, onDelete }) {
   );
 }
 
-// ── Last week accordion ───────────────────────────────────────────────
-function LastWeek({ items, onLight = true }) {
+// ── Last week section — prominent, merges completed_last + done tasks ──
+function LastWeek({ completedLast = [], doneTasks = [], onLight = true }) {
   const [open, setOpen] = useState(false);
-  if (!items.length) return null;
+  const allItems = [
+    ...doneTasks.map(t => ({ text: t.text, source: "task" })),
+    ...completedLast.map(t => ({ text: t, source: "note" })),
+  ];
+  if (!allItems.length) return null;
+  const accent = onLight ? C.blue : "rgba(255,255,255,0.6)";
+  const textColor = onLight ? C.gray600 : "rgba(255,255,255,0.5)";
+  const borderColor = onLight ? C.gray200 : "rgba(255,255,255,0.12)";
   return (
-    <div style={{ marginTop: 12, paddingTop: 10, borderTop: `0.5px solid ${C.gray200}` }}>
+    <div style={{ marginTop: 14, paddingTop: 12, borderTop: `0.5px solid ${borderColor}` }}>
       <button onClick={() => setOpen(!open)} style={{
         background: "none", border: "none", cursor: "pointer", padding: 0,
-        fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 700,
-        color: C.gray400, display: "flex", alignItems: "center", gap: 4,
-        letterSpacing: "0.09em", textTransform: "uppercase",
+        fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, fontWeight: 600,
+        color: onLight ? C.gray400 : "rgba(255,255,255,0.38)",
+        display: "flex", alignItems: "center", gap: 5,
+        letterSpacing: "0.06em", textTransform: "uppercase",
       }}>
         <span style={{ display: "inline-block", transform: open ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>›</span>
-        Last week · {items.length} completed
+        Last week · {allItems.length} completed
       </button>
-      {open && items.map((t, i) => (
-        <div key={i} style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, color: C.gray400, padding: "3px 0 3px 14px" }}>✓ {t}</div>
-      ))}
+      {open && (
+        <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 4 }}>
+          {allItems.map((item, i) => (
+            <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "3px 0" }}>
+              <span style={{ color: accent, fontSize: 11, marginTop: 2, flexShrink: 0 }}>✓</span>
+              <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: textColor, lineHeight: 1.45 }}>{item.text}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -376,21 +386,23 @@ function HeroTaskRow({ task, onToggle, onEdit, onDelete, isCurrentUser }) {
 }
 
 // ── Member card ───────────────────────────────────────────────────────
-function MemberCard({ member, entry, isCurrentUser, token, weekOf, onEntryUpdated, mobile, span }) {
+function MemberCard({ member, entry, lastEntry, isCurrentUser, isAdmin, token, weekOf, onEntryUpdated, mobile, span }) {
   const rawTasks = entry?.tasks || [];
   const [tasks, setTasks] = useState(rawTasks);
+  const [blockers, setBlockers] = useState(entry?.blockers || []);
   const [saving, setSaving] = useState(false);
   const [addingTask, setAddingTask] = useState(false);
   const [newTask, setNewTask] = useState("");
-  useEffect(() => setTasks(entry?.tasks || []), [entry]);
+  useEffect(() => { setTasks(entry?.tasks || []); setBlockers(entry?.blockers || []); }, [entry]);
 
   const note = entry?.note || null;
   const completedLast = entry?.completed_last || [];
-  const blockers = entry?.blockers || [];
+  const lastDoneTasks = (lastEntry?.tasks || []).filter(t => t.done);
   const submitted = !!entry;
   const isBlocked = blockers.length > 0;
   const isHero = span === "hero";
   const done = tasks.filter(t => t.done).length;
+  const canEdit = isCurrentUser || isAdmin;
 
   const saveTasks = async (updated) => {
     if (!isCurrentUser || !entry) return;
@@ -416,6 +428,15 @@ function MemberCard({ member, entry, isCurrentUser, token, weekOf, onEntryUpdate
     const updated = tasks.filter(t => t.id !== id);
     setTasks(updated);
     saveTasks(updated);
+  };
+
+  const resolveBlocker = async (index) => {
+    const updated = blockers.filter((_, i) => i !== index);
+    setBlockers(updated);
+    setSaving(true);
+    await sb.upsertPulseEntry(token, { ...entry, blockers: updated });
+    setSaving(false);
+    onEntryUpdated();
   };
 
   const handleAddTask = () => {
@@ -470,7 +491,9 @@ function MemberCard({ member, entry, isCurrentUser, token, weekOf, onEntryUpdate
             {note && <p style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 14, color: "rgba(255,255,255,0.82)", fontStyle: "italic", lineHeight: 1.55, marginBottom: 18, fontWeight: 300 }}>"{note}"</p>}
             {blockers.length > 0 && blockers.map((b, i) => (
               <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "rgba(222,28,119,0.25)", borderRadius: 10, padding: "9px 12px", marginBottom: 12, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: "#ffb3d0", lineHeight: 1.45 }}>
-                <span style={{ flexShrink: 0 }}>⚠</span><span>{b}</span>
+                <span style={{ flexShrink: 0 }}>⚠</span>
+                <span style={{ flex: 1 }}>{b}</span>
+                {canEdit && <button onClick={() => resolveBlocker(i)} style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: 6, padding: "2px 8px", color: "#fff", cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 600, whiteSpace: "nowrap" }}>Resolve</button>}
               </div>
             ))}
             {tasks.length > 0 && (
@@ -500,7 +523,7 @@ function MemberCard({ member, entry, isCurrentUser, token, weekOf, onEntryUpdate
               )}
             </div>
             <div style={{ marginTop: 12, paddingTop: 10, borderTop: "0.5px solid rgba(255,255,255,0.12)" }}>
-              {completedLast.length > 0 && <LastWeek items={completedLast} onLight={false}/>}
+              <LastWeek completedLast={completedLast} doneTasks={lastDoneTasks} onLight={false}/>
             </div>
           </>
         )}
@@ -545,7 +568,9 @@ function MemberCard({ member, entry, isCurrentUser, token, weekOf, onEntryUpdate
 
           {isBlocked && blockers.map((b,i) => (
             <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#FFF0F3", border: `1px solid #FFB3C0`, borderRadius: 10, padding: "9px 12px", marginBottom: 12, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12.5, color: C.error, lineHeight: 1.45 }}>
-              <span style={{ flexShrink: 0 }}>⚠</span><span>{b}</span>
+              <span style={{ flexShrink: 0 }}>⚠</span>
+              <span style={{ flex: 1 }}>{b}</span>
+              {canEdit && <button onClick={() => resolveBlocker(i)} style={{ background: `${C.error}15`, border: `1px solid ${C.error}30`, borderRadius: 6, padding: "2px 8px", color: C.error, cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 600, whiteSpace: "nowrap" }}>Resolve</button>}
             </div>
           ))}
 
@@ -577,7 +602,7 @@ function MemberCard({ member, entry, isCurrentUser, token, weekOf, onEntryUpdate
               </div>
             </>
           )}
-          <LastWeek items={completedLast}/>
+          <LastWeek completedLast={completedLast} doneTasks={lastDoneTasks}/>
         </>
       )}
     </div>
@@ -801,14 +826,27 @@ function DashboardScreen({ user, profile, token, onSignOut, onAdmin, isAdmin }) 
   const mobile = useIsMobile();
   const [profiles, setProfiles] = useState([]);
   const [entries, setEntries] = useState([]);
+  const [lastEntries, setLastEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const weekOf = currentWeekOf();
+  const lastWeekOf = (() => {
+    const d = new Date();
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1) - 7;
+    const mon = new Date(d); mon.setDate(diff);
+    return mon.toISOString().split("T")[0];
+  })();
 
   const loadData = async () => {
-    const [profs, ents] = await Promise.all([sb.getAllProfiles(token), sb.getPulseEntries(token, weekOf)]);
+    const [profs, ents, lastEnts] = await Promise.all([
+      sb.getAllProfiles(token),
+      sb.getPulseEntries(token, weekOf),
+      sb.getPulseEntries(token, lastWeekOf),
+    ]);
     if (Array.isArray(profs)) setProfiles(profs);
     if (Array.isArray(ents)) setEntries(ents);
+    if (Array.isArray(lastEnts)) setLastEntries(lastEnts);
   };
 
   useEffect(() => { (async () => { await loadData(); setLoading(false); })(); }, [token]);
@@ -824,6 +862,7 @@ function DashboardScreen({ user, profile, token, onSignOut, onAdmin, isAdmin }) 
   const handleRefresh = async () => { setRefreshing(true); await loadData(); setRefreshing(false); };
 
   const getEntry = (uid) => entries.find(e => e.user_id === uid) || null;
+  const getLastEntry = (uid) => lastEntries.find(e => e.user_id === uid) || null;
   const submitted = profiles.filter(p => getEntry(p.user_id)).length;
   const blocked = profiles.filter(p => (getEntry(p.user_id)?.blockers||[]).length > 0).length;
   const allTasks = entries.flatMap(e => e.tasks||[]);
@@ -857,7 +896,8 @@ function DashboardScreen({ user, profile, token, onSignOut, onAdmin, isAdmin }) 
         justifyContent: "space-between",
         boxShadow: "0 2px 8px rgba(2,10,64,0.3)",
       }}>
-        <CloverLogo height={mobile?22:26} white/>
+        <CloverLogo height={mobile?28:36} white/>
+        <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontWeight: 300, fontSize: mobile?13:15, color: "rgba(255,255,255,0.5)", marginLeft: 6, letterSpacing: "0.06em", textTransform: "uppercase" }}>Pulse</span>
 
         <div style={{ display: "flex", alignItems: "center", gap: mobile?10:16 }}>
           {!mobile && (
@@ -905,7 +945,7 @@ function DashboardScreen({ user, profile, token, onSignOut, onAdmin, isAdmin }) 
             </div>
             {profiles.map((p,i) => {
               const span = getSpan(p,i);
-              return <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} isCurrentUser={p.user_id===user?.id} token={token} weekOf={weekOf} onEntryUpdated={handleRefresh} mobile span={span}/>;
+              return <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={p.user_id===user?.id} isAdmin={isAdmin} token={token} weekOf={weekOf} onEntryUpdated={handleRefresh} mobile span={span}/>;
             })}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <WaTile/>
@@ -916,7 +956,7 @@ function DashboardScreen({ user, profile, token, onSignOut, onAdmin, isAdmin }) 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gridAutoRows: "minmax(170px,auto)", gap: 14 }}>
             {profiles.map((p,i) => {
               const span = getSpan(p,i);
-              return <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} isCurrentUser={p.user_id===user?.id} token={token} weekOf={weekOf} onEntryUpdated={handleRefresh} mobile={false} span={span}/>;
+              return <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={p.user_id===user?.id} isAdmin={isAdmin} token={token} weekOf={weekOf} onEntryUpdated={handleRefresh} mobile={false} span={span}/>;
             })}
             <StatTile label="Submitted" value={`${submitted}/${profiles.length}`} accent={C.blue} sub={submitted<profiles.length?`${profiles.length-submitted} missing`:"All in"}/>
             <StatTile label="Blockers" value={blocked} accent={blocked>0?C.pink:C.gray800} sub={blocked>0?"Needs attention":"All clear"}/>
