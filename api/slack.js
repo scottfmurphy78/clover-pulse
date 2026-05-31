@@ -257,9 +257,19 @@ export default async function handler(req, res) {
     const event = body.event;
     console.log("Event type:", event.type, "subtype:", event.subtype, "channel_type:", event.channel_type);
 
+    // Skip standalone file_shared events — handled via message.file_share
+    if (event.type === "file_shared") {
+      return res.status(200).send("ok");
+    }
+
     // Only handle DMs, ignore bot messages
     if (event.type !== "message" || event.subtype === "bot_message" || !event.user) {
       console.log("Skipping — not a user message");
+      return res.status(200).send("ok");
+    }
+
+    // Skip the separate file_shared event — we handle files via the message event
+    if (event.type === "file_shared") {
       return res.status(200).send("ok");
     }
 
