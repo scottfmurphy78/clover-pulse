@@ -1099,7 +1099,8 @@ function DashboardScreen({ user, profile, token, onSignOut, onAdmin, isAdmin }) 
             <StatTile label="Submitted" value={`${submitted}/${profiles.length}`} accent={C.blue} sub={submitted<profiles.length?`${profiles.length-submitted} missing`:"All in"}/>
             <StatTile label="Blockers" value={blocked} accent={blocked>0?C.pink:C.gray800} sub={blocked>0?"Needs attention":"All clear"}/>
             <StatTile label="Tasks" value={allTasks.length} sub={`${doneTasks} done`} accent={C.blue}/>
-            {isHistoryView ? <CompletionTile profiles={profiles} entries={entries}/> : <WaTile/>}
+            <CompletionTile profiles={profiles} entries={entries}/>
+            {!isHistoryView && <WaTile/>}
           </div>
         )}
         <div style={{ textAlign: "center", marginTop: 44, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, color: C.gray200 }}>
