@@ -273,6 +273,32 @@ function ProgressBar({ tasks }) {
   );
 }
 
+// How many times has a task been carried over?
+// Each carryover prepends "co_" to the id, so count the occurrences
+function carryCount(task) {
+  if (!task.carried_over) return 0;
+  const matches = (task.id || "").match(/^(co_)+/);
+  if (!matches) return 1;
+  return matches[0].length / 3; // "co_" is 3 chars
+}
+
+function carryStyle(task) {
+  const count = carryCount(task);
+  if (count === 0) return null;
+  if (count === 1) return {
+    bg: "rgba(255,181,71,0.10)",
+    border: "#FFB547",
+    label: "↩ last week",
+    labelColor: "#B76E00",
+  };
+  return {
+    bg: "rgba(255,77,109,0.08)",
+    border: "#FF4D6D",
+    label: `↩ ${count}+ weeks`,
+    labelColor: "#C00030",
+  };
+}
+
 // ── Task row with inline edit ─────────────────────────────────────────
 function TaskRow({ task, onToggle, onEdit, onDelete }) {
   const [editing, setEditing] = useState(false);
@@ -283,8 +309,18 @@ function TaskRow({ task, onToggle, onEdit, onDelete }) {
     setEditing(false);
   };
 
+  const cs = carryStyle(task);
+
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", opacity: task.done ? 0.38 : 1, transition: "opacity 0.18s", group: true }}>
+    <div style={{
+      display: "flex", alignItems: "center", gap: 10,
+      padding: cs ? "5px 8px 5px 6px" : "5px 0",
+      opacity: task.done ? 0.38 : 1, transition: "opacity 0.18s",
+      background: cs && !task.done ? cs.bg : "transparent",
+      borderRadius: cs ? 8 : 0,
+      borderLeft: cs && !task.done ? `3px solid ${cs.border}` : "none",
+      marginBottom: cs ? 2 : 0,
+    }}>
       <DSCheckbox checked={task.done} onChange={() => onToggle(task.id)}/>
       {editing ? (
         <input
@@ -300,16 +336,19 @@ function TaskRow({ task, onToggle, onEdit, onDelete }) {
           }}
         />
       ) : (
-        <span
-          onClick={() => setEditing(true)}
-          style={{
-            flex: 1, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5,
-            color: C.gray800, lineHeight: 1.45, cursor: "text",
-            textDecoration: task.done ? "line-through" : "none",
-          }}
-        >
+        <span onClick={() => setEditing(true)} style={{
+          flex: 1, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5,
+          color: C.gray800, lineHeight: 1.45, cursor: "text",
+          textDecoration: task.done ? "line-through" : "none",
+        }}>
           {task.text}
         </span>
+      )}
+      {cs && !task.done && (
+        <span style={{
+          fontFamily: "'Poppins',Arial,sans-serif", fontSize: 9, fontWeight: 700,
+          color: cs.labelColor, whiteSpace: "nowrap", letterSpacing: "0.03em",
+        }}>{cs.label}</span>
       )}
       <button onClick={() => onDelete(task.id)} style={{
         background: "none", border: "none", cursor: "pointer", padding: "2px 4px",
@@ -370,8 +409,18 @@ function HeroTaskRow({ task, onToggle, onEdit, onDelete, isCurrentUser }) {
     setEditing(false);
   };
 
+  const cs = carryStyle(task);
+
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", opacity: task.done ? 0.35 : 1, transition: "opacity 0.18s" }}>
+    <div style={{
+      display: "flex", alignItems: "center", gap: 10,
+      padding: cs ? "5px 8px 5px 6px" : "5px 0",
+      opacity: task.done ? 0.35 : 1, transition: "opacity 0.18s",
+      background: cs && !task.done ? (carryCount(task) === 1 ? "rgba(255,181,71,0.15)" : "rgba(255,77,109,0.15)") : "transparent",
+      borderRadius: cs ? 8 : 0,
+      borderLeft: cs && !task.done ? `3px solid ${cs.border}` : "none",
+      marginBottom: cs ? 2 : 0,
+    }}>
       <div onClick={() => onToggle(task.id)} style={{ width: 18, height: 18, borderRadius: 4, flexShrink: 0, cursor: "pointer", border: task.done ? "none" : "2px solid rgba(255,255,255,0.4)", background: task.done ? "rgba(255,255,255,0.9)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s" }}>
         {task.done && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l2.5 2.5L9 1" stroke={C.blue} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
       </div>
@@ -390,6 +439,9 @@ function HeroTaskRow({ task, onToggle, onEdit, onDelete, isCurrentUser }) {
         >
           {task.text}
         </span>
+      )}
+      {cs && !task.done && (
+        <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 9, fontWeight: 700, color: cs.labelColor, whiteSpace: "nowrap", letterSpacing: "0.03em" }}>{cs.label}</span>
       )}
       {isCurrentUser && (
         <button onClick={() => onDelete(task.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 4px", color: "rgba(255,255,255,0.3)", fontSize: 14, lineHeight: 1 }}>×</button>
@@ -813,7 +865,7 @@ function AdminScreen({ token, onBack }) {
             <div style={{ padding: 40, display: "flex", justifyContent: "center" }}><Spinner/></div>
           ) : profiles.length === 0 ? (
             <div style={{ padding: 40, textAlign: "center", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 14, color: C.gray400 }}>No team members yet.</div>
-          ) : profiles.map((p, i) => (
+          ) : sortedProfiles.map((p, i) => (
             <div key={p.user_id} style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1.5fr 1fr 80px", padding: "0 20px", background: i % 2 === 0 ? "#fff" : C.gray50, borderTop: `0.5px solid ${C.gray100}` }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 0" }}>
                 <Avatar name={p.name} size={32} gradient/>
@@ -983,9 +1035,15 @@ function DashboardScreen({ user, profile, token, onSignOut, onAdmin, isAdmin }) 
   const allTasks = entries.flatMap(e => e.tasks||[]);
   const doneTasks = allTasks.filter(t => t.done).length;
 
+  // Always show the logged-in user's card first
+  const sortedProfiles = [
+    ...profiles.filter(p => p.user_id === user?.id),
+    ...profiles.filter(p => p.user_id !== user?.id),
+  ];
+
   const getSpan = (p, i) => {
     const e = getEntry(p.user_id);
-    if (i === 0) return "hero";
+    if (p.user_id === user?.id) return "hero";
     if ((e?.blockers||[]).filter(b => !(typeof b === "object" ? b.resolved : false)).length > 0) return "wide";
     if ((e?.tasks||[]).length >= 4) return "tall";
     return "small";
@@ -1080,7 +1138,7 @@ function DashboardScreen({ user, profile, token, onSignOut, onAdmin, isAdmin }) 
               <StatTile label="Submitted" value={`${submitted}/${profiles.length}`} accent={C.blue}/>
               <StatTile label="Blockers" value={blocked} accent={blocked>0?C.pink:C.gray800} sub={blocked>0?"Needs attention":"All clear"}/>
             </div>
-            {profiles.map((p,i) => {
+            {sortedProfiles.map((p,i) => {
               const span = getSpan(p,i);
               return <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={!isHistoryView && p.user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} mobile span={span}/>;
             })}
@@ -1092,7 +1150,7 @@ function DashboardScreen({ user, profile, token, onSignOut, onAdmin, isAdmin }) 
           </div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gridAutoRows: "minmax(170px,auto)", gap: 14 }}>
-            {profiles.map((p,i) => {
+            {sortedProfiles.map((p,i) => {
               const span = getSpan(p,i);
               return <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={!isHistoryView && p.user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} mobile={false} span={span}/>;
             })}
