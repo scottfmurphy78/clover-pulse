@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { supabase } from "./supabaseClient";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -25,56 +26,13 @@ const C = {
   error:     "#FF4D6D",
 };
 
-// ── Supabase client ───────────────────────────────────────────────────
+// ── Supabase DB helper (auth-free — uses token from supabase session) ──
 const sb = {
   h: (token) => ({
     "apikey": SUPABASE_ANON_KEY,
     "Content-Type": "application/json",
     "Authorization": `Bearer ${token || SUPABASE_ANON_KEY}`,
   }),
-  async signInWithGoogle() {
-    window.location.href = `${SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(window.location.origin)}`;
-  },
-  async signOut(token) {
-    await fetch(`${SUPABASE_URL}/auth/v1/logout`, { method: "POST", headers: this.h(token) });
-  },
-  async getSession() {
-    const hash = window.location.hash;
-    if (hash.includes("access_token")) {
-      const p = new URLSearchParams(hash.slice(1));
-      const token = p.get("access_token");
-      if (token) {
-        const exp = Date.now() + parseInt(p.get("expires_in") || "3600") * 1000;
-        localStorage.setItem("sb_token", token);
-        localStorage.setItem("sb_refresh", p.get("refresh_token") || "");
-        localStorage.setItem("sb_expires", String(exp));
-        window.history.replaceState({}, "", window.location.pathname);
-        return token;
-      }
-    }
-    const stored = localStorage.getItem("sb_token");
-    const expires = parseInt(localStorage.getItem("sb_expires") || "0");
-    if (stored && Date.now() < expires) return stored;
-    const refresh = localStorage.getItem("sb_refresh");
-    if (refresh) {
-      const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
-        method: "POST", headers: this.h(null), body: JSON.stringify({ refresh_token: refresh }),
-      });
-      if (r.ok) {
-        const d = await r.json();
-        localStorage.setItem("sb_token", d.access_token);
-        localStorage.setItem("sb_refresh", d.refresh_token);
-        localStorage.setItem("sb_expires", String(Date.now() + d.expires_in * 1000));
-        return d.access_token;
-      }
-    }
-    return null;
-  },
-  async getUser(token) {
-    const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: this.h(token) });
-    return r.ok ? r.json() : null;
-  },
-  clearSession() { ["sb_token","sb_refresh","sb_expires"].forEach(k => localStorage.removeItem(k)); },
   async getProfile(token, userId) {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/profiles?user_id=eq.${userId}&select=*`, { headers: this.h(token) });
     const d = await r.json(); return d?.[0] || null;
@@ -136,12 +94,10 @@ function useIsMobile() {
 }
 function getInitials(name) { return (name||"?").split(" ").map(w=>w[0]).slice(0,2).join("").toUpperCase(); }
 
-// ── ADMIN EMAILS — add co-founders here ──────────────────────────────
+// ── ADMIN EMAILS ──────────────────────────────────────────────────────
 const ADMIN_EMAILS = ["scott@rideclover.com","antonio@rideclover.com"];
 
 // ── Design atoms ──────────────────────────────────────────────────────
-
-// Real Clover logo — PNG, white-filtered on dark backgrounds
 function CloverLogo({ height = 28, white = false }) {
   return (
     <img
@@ -156,7 +112,6 @@ function Spinner({ color = C.blue, size = 18 }) {
   return <div style={{ width: size, height: size, borderRadius: "50%", border: `2px solid ${color}30`, borderTop: `2px solid ${color}`, animation: "spin 0.7s linear infinite", flexShrink: 0 }}/>;
 }
 
-// A1 Primary button
 function BtnPrimary({ children, onClick, loading, disabled, style={} }) {
   return (
     <button onClick={disabled||loading ? undefined : onClick} style={{
@@ -174,7 +129,6 @@ function BtnPrimary({ children, onClick, loading, disabled, style={} }) {
   );
 }
 
-// A9 Destructive button
 function BtnDestructive({ children, onClick, loading, style={} }) {
   return (
     <button onClick={onClick} style={{
@@ -189,7 +143,6 @@ function BtnDestructive({ children, onClick, loading, style={} }) {
   );
 }
 
-// Ghost button
 function BtnGhost({ children, onClick, style={} }) {
   return (
     <button onClick={onClick} style={{
@@ -204,8 +157,7 @@ function BtnGhost({ children, onClick, style={} }) {
   );
 }
 
-// Design-system checkbox (18×18, blue when checked)
-function DSCheckbox({ checked, onChange, onLight = true }) {
+function DSCheckbox({ checked, onChange }) {
   return (
     <div onClick={e => { e.stopPropagation(); onChange(!checked); }} style={{
       width: 18, height: 18, borderRadius: 4, flexShrink: 0, cursor: "pointer",
@@ -213,7 +165,6 @@ function DSCheckbox({ checked, onChange, onLight = true }) {
       background: checked ? C.blue : "transparent",
       display: "flex", alignItems: "center", justifyContent: "center",
       transition: "all 0.15s",
-      boxShadow: "none",
     }}>
       {checked && (
         <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
@@ -224,7 +175,6 @@ function DSCheckbox({ checked, onChange, onLight = true }) {
   );
 }
 
-// Status badge
 function Badge({ status }) {
   const map = {
     "on-track": { bg: "#D1FAF0", color: "#00875A", label: "On track" },
@@ -246,7 +196,6 @@ function Badge({ status }) {
   );
 }
 
-// Avatar initials circle
 function Avatar({ name, size = 32, gradient = false }) {
   return (
     <div style={{
@@ -262,7 +211,6 @@ function Avatar({ name, size = 32, gradient = false }) {
   );
 }
 
-// Progress bar
 function ProgressBar({ tasks }) {
   const done = tasks.filter(t => t.done).length;
   const pct = tasks.length ? (done / tasks.length) * 100 : 0;
@@ -273,115 +221,49 @@ function ProgressBar({ tasks }) {
   );
 }
 
-// How many times has a task been carried over?
-// Each carryover prepends "co_" to the id, so count the occurrences
 function carryCount(task) {
   if (!task.carried_over) return 0;
   const matches = (task.id || "").match(/^(co_)+/);
   if (!matches) return 1;
-  return matches[0].length / 3; // "co_" is 3 chars
+  return matches[0].length / 3;
 }
 
 function carryStyle(task) {
   const count = carryCount(task);
   if (count === 0) return null;
-  if (count === 1) return {
-    bg: "rgba(255,181,71,0.10)",
-    border: "#FFB547",
-    label: "↩ last week",
-    labelColor: "#B76E00",
-  };
-  return {
-    bg: "rgba(255,77,109,0.08)",
-    border: "#FF4D6D",
-    label: `↩ ${count}+ weeks`,
-    labelColor: "#C00030",
-  };
+  if (count === 1) return { bg: "rgba(255,181,71,0.10)", border: "#FFB547", label: "↩ last week", labelColor: "#B76E00" };
+  return { bg: "rgba(255,77,109,0.08)", border: "#FF4D6D", label: `↩ ${count}+ weeks`, labelColor: "#C00030" };
 }
 
-// ── Task row with inline edit ─────────────────────────────────────────
 function TaskRow({ task, onToggle, onEdit, onDelete }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(task.text);
-
-  const save = () => {
-    if (val.trim() && val !== task.text) onEdit(task.id, val.trim());
-    setEditing(false);
-  };
-
+  const save = () => { if (val.trim() && val !== task.text) onEdit(task.id, val.trim()); setEditing(false); };
   const cs = carryStyle(task);
-
   return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 10,
-      padding: cs ? "5px 8px 5px 6px" : "5px 0",
-      opacity: task.done ? 0.38 : 1, transition: "opacity 0.18s",
-      background: cs && !task.done ? cs.bg : "transparent",
-      borderRadius: cs ? 8 : 0,
-      borderLeft: cs && !task.done ? `3px solid ${cs.border}` : "none",
-      marginBottom: cs ? 2 : 0,
-    }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: cs ? "5px 8px 5px 6px" : "5px 0", opacity: task.done ? 0.38 : 1, transition: "opacity 0.18s", background: cs && !task.done ? cs.bg : "transparent", borderRadius: cs ? 8 : 0, borderLeft: cs && !task.done ? `3px solid ${cs.border}` : "none", marginBottom: cs ? 2 : 0 }}>
       <DSCheckbox checked={task.done} onChange={() => onToggle(task.id)}/>
       {editing ? (
-        <input
-          autoFocus value={val}
-          onChange={e => setVal(e.target.value)}
-          onBlur={save}
-          onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
-          style={{
-            flex: 1, border: `1.5px solid ${C.blue}`, borderRadius: 6,
-            padding: "3px 8px", fontFamily: "'Poppins',Arial,sans-serif",
-            fontSize: 13.5, color: C.gray800, outline: "none",
-            boxShadow: `0 0 0 3px rgba(28,43,222,0.10)`,
-          }}
-        />
+        <input autoFocus value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }} style={{ flex: 1, border: `1.5px solid ${C.blue}`, borderRadius: 6, padding: "3px 8px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: C.gray800, outline: "none", boxShadow: `0 0 0 3px rgba(28,43,222,0.10)` }}/>
       ) : (
-        <span onClick={() => setEditing(true)} style={{
-          flex: 1, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5,
-          color: C.gray800, lineHeight: 1.45, cursor: "text",
-          textDecoration: task.done ? "line-through" : "none",
-        }}>
-          {task.text}
-        </span>
+        <span onClick={() => setEditing(true)} style={{ flex: 1, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: C.gray800, lineHeight: 1.45, cursor: "text", textDecoration: task.done ? "line-through" : "none" }}>{task.text}</span>
       )}
-      {cs && !task.done && (
-        <span style={{
-          fontFamily: "'Poppins',Arial,sans-serif", fontSize: 9, fontWeight: 700,
-          color: cs.labelColor, whiteSpace: "nowrap", letterSpacing: "0.03em",
-        }}>{cs.label}</span>
-      )}
-      <button onClick={() => onDelete(task.id)} style={{
-        background: "none", border: "none", cursor: "pointer", padding: "2px 4px",
-        color: C.gray400, fontSize: 14, lineHeight: 1, opacity: 0.5,
-        display: "flex", alignItems: "center",
-      }}>×</button>
+      {cs && !task.done && <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 9, fontWeight: 700, color: cs.labelColor, whiteSpace: "nowrap", letterSpacing: "0.03em" }}>{cs.label}</span>}
+      <button onClick={() => onDelete(task.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 4px", color: C.gray400, fontSize: 14, lineHeight: 1, opacity: 0.5, display: "flex", alignItems: "center" }}>×</button>
     </div>
   );
 }
 
-// ── Last week section — prominent, merges completed_last + done tasks ──
 function LastWeek({ completedLast = [], doneTasks = [], onLight = true }) {
   const [open, setOpen] = useState(false);
-  const allItems = [
-    ...doneTasks.map(t => ({ text: t.text, source: "task" })),
-    ...completedLast.map(t => ({ text: t, source: "note" })),
-  ];
+  const allItems = [...doneTasks.map(t => ({ text: t.text, source: "task" })), ...completedLast.map(t => ({ text: t, source: "note" }))];
   if (!allItems.length) return null;
   const accent = onLight ? C.blue : "rgba(255,255,255,0.6)";
   const textColor = onLight ? C.gray600 : "rgba(255,255,255,0.5)";
   const borderColor = onLight ? C.gray200 : "rgba(255,255,255,0.12)";
   return (
     <div style={{ marginTop: 14, paddingTop: 12, borderTop: `0.5px solid ${borderColor}` }}>
-      <button onClick={() => setOpen(!open)} style={{
-        background: onLight ? C.lavender : "rgba(255,255,255,0.1)",
-        border: `1px solid ${onLight ? C.gray200 : "rgba(255,255,255,0.15)"}`,
-        borderRadius: 8, cursor: "pointer",
-        padding: "7px 12px", width: "100%",
-        fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, fontWeight: 600,
-        color: onLight ? C.blue : "rgba(255,255,255,0.6)",
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        letterSpacing: "0.04em",
-      }}>
+      <button onClick={() => setOpen(!open)} style={{ background: onLight ? C.lavender : "rgba(255,255,255,0.1)", border: `1px solid ${onLight ? C.gray200 : "rgba(255,255,255,0.15)"}`, borderRadius: 8, cursor: "pointer", padding: "7px 12px", width: "100%", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, fontWeight: 600, color: onLight ? C.blue : "rgba(255,255,255,0.6)", display: "flex", alignItems: "center", justifyContent: "space-between", letterSpacing: "0.04em" }}>
         <span>✓ Last week · {allItems.length} completed</span>
         <span style={{ display: "inline-block", transform: open ? "rotate(180deg)" : "none", transition: "transform 0.2s", fontSize: 14 }}>⌄</span>
       </button>
@@ -399,58 +281,27 @@ function LastWeek({ completedLast = [], doneTasks = [], onLight = true }) {
   );
 }
 
-// ── Hero task row — inline edit on dark blue background ───────────────
 function HeroTaskRow({ task, onToggle, onEdit, onDelete, isCurrentUser }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(task.text);
-
-  const save = () => {
-    if (val.trim() && val !== task.text) onEdit(task.id, val.trim());
-    setEditing(false);
-  };
-
+  const save = () => { if (val.trim() && val !== task.text) onEdit(task.id, val.trim()); setEditing(false); };
   const cs = carryStyle(task);
-
   return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 10,
-      padding: cs ? "5px 8px 5px 6px" : "5px 0",
-      opacity: task.done ? 0.35 : 1, transition: "opacity 0.18s",
-      background: cs && !task.done ? (carryCount(task) === 1 ? "rgba(255,181,71,0.15)" : "rgba(255,77,109,0.15)") : "transparent",
-      borderRadius: cs ? 8 : 0,
-      borderLeft: cs && !task.done ? `3px solid ${cs.border}` : "none",
-      marginBottom: cs ? 2 : 0,
-    }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: cs ? "5px 8px 5px 6px" : "5px 0", opacity: task.done ? 0.35 : 1, transition: "opacity 0.18s", background: cs && !task.done ? (carryCount(task) === 1 ? "rgba(255,181,71,0.15)" : "rgba(255,77,109,0.15)") : "transparent", borderRadius: cs ? 8 : 0, borderLeft: cs && !task.done ? `3px solid ${cs.border}` : "none", marginBottom: cs ? 2 : 0 }}>
       <div onClick={() => onToggle(task.id)} style={{ width: 18, height: 18, borderRadius: 4, flexShrink: 0, cursor: "pointer", border: task.done ? "none" : "2px solid rgba(255,255,255,0.4)", background: task.done ? "rgba(255,255,255,0.9)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s" }}>
         {task.done && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l2.5 2.5L9 1" stroke={C.blue} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
       </div>
       {editing && isCurrentUser ? (
-        <input
-          autoFocus value={val}
-          onChange={e => setVal(e.target.value)}
-          onBlur={save}
-          onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
-          style={{ flex: 1, background: "rgba(255,255,255,0.15)", border: "1.5px solid rgba(255,255,255,0.5)", borderRadius: 6, padding: "3px 8px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: "#fff", outline: "none" }}
-        />
+        <input autoFocus value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }} style={{ flex: 1, background: "rgba(255,255,255,0.15)", border: "1.5px solid rgba(255,255,255,0.5)", borderRadius: 6, padding: "3px 8px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: "#fff", outline: "none" }}/>
       ) : (
-        <span
-          onClick={() => isCurrentUser && setEditing(true)}
-          style={{ flex: 1, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: "#fff", lineHeight: 1.45, cursor: isCurrentUser ? "text" : "default", textDecoration: task.done ? "line-through" : "none", opacity: task.done ? 0.5 : 1 }}
-        >
-          {task.text}
-        </span>
+        <span onClick={() => isCurrentUser && setEditing(true)} style={{ flex: 1, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: "#fff", lineHeight: 1.45, cursor: isCurrentUser ? "text" : "default", textDecoration: task.done ? "line-through" : "none", opacity: task.done ? 0.5 : 1 }}>{task.text}</span>
       )}
-      {cs && !task.done && (
-        <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 9, fontWeight: 700, color: cs.labelColor, whiteSpace: "nowrap", letterSpacing: "0.03em" }}>{cs.label}</span>
-      )}
-      {isCurrentUser && (
-        <button onClick={() => onDelete(task.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 4px", color: "rgba(255,255,255,0.3)", fontSize: 14, lineHeight: 1 }}>×</button>
-      )}
+      {cs && !task.done && <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 9, fontWeight: 700, color: cs.labelColor, whiteSpace: "nowrap", letterSpacing: "0.03em" }}>{cs.label}</span>}
+      {isCurrentUser && <button onClick={() => onDelete(task.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 4px", color: "rgba(255,255,255,0.3)", fontSize: 14, lineHeight: 1 }}>×</button>}
     </div>
   );
 }
 
-// ── Member card ───────────────────────────────────────────────────────
 function MemberCard({ member, entry, lastEntry, isCurrentUser, isAdmin, token, weekOf, onEntryUpdated, mobile, span }) {
   const rawTasks = entry?.tasks || [];
   const [tasks, setTasks] = useState(rawTasks);
@@ -477,38 +328,15 @@ function MemberCard({ member, entry, lastEntry, isCurrentUser, isAdmin, token, w
     onEntryUpdated();
   };
 
-  const handleToggle = (id) => {
-    const updated = tasks.map(t => t.id === id ? { ...t, done: !t.done } : t);
-    setTasks(updated);
-    saveTasks(updated);
-  };
-
-  const handleEdit = (id, text) => {
-    const updated = tasks.map(t => t.id === id ? { ...t, text } : t);
-    setTasks(updated);
-    saveTasks(updated);
-  };
-
-  const handleDelete = (id) => {
-    const updated = tasks.filter(t => t.id !== id);
-    setTasks(updated);
-    saveTasks(updated);
-  };
+  const handleToggle = (id) => { const updated = tasks.map(t => t.id === id ? { ...t, done: !t.done } : t); setTasks(updated); saveTasks(updated); };
+  const handleEdit = (id, text) => { const updated = tasks.map(t => t.id === id ? { ...t, text } : t); setTasks(updated); saveTasks(updated); };
+  const handleDelete = (id) => { const updated = tasks.filter(t => t.id !== id); setTasks(updated); saveTasks(updated); };
 
   const resolveBlocker = async (index) => {
-    const updated = blockers.map((b, i) => i === index
-      ? (typeof b === "object" ? { ...b, resolved: true } : { text: b, resolved: true })
-      : (typeof b === "object" ? b : { text: b, resolved: false })
-    );
-    console.log("Resolving blocker", index, "updated:", updated);
+    const updated = blockers.map((b, i) => i === index ? (typeof b === "object" ? { ...b, resolved: true } : { text: b, resolved: true }) : (typeof b === "object" ? b : { text: b, resolved: false }));
     setBlockers(updated);
     setSaving(true);
-    try {
-      const result = await sb.upsertPulseEntry(token, { ...entry, blockers: updated });
-      console.log("Resolve result:", JSON.stringify(result)?.substring(0, 200));
-    } catch (err) {
-      console.error("Resolve error:", err);
-    }
+    try { await sb.upsertPulseEntry(token, { ...entry, blockers: updated }); } catch (err) { console.error("Resolve error:", err); }
     setSaving(false);
     onEntryUpdated();
   };
@@ -516,37 +344,16 @@ function MemberCard({ member, entry, lastEntry, isCurrentUser, isAdmin, token, w
   const handleAddTask = () => {
     if (!newTask.trim()) return;
     const updated = [...tasks, { id: `m${Date.now()}`, text: newTask.trim(), done: false }];
-    setTasks(updated);
-    saveTasks(updated);
-    setNewTask(""); setAddingTask(false);
+    setTasks(updated); saveTasks(updated); setNewTask(""); setAddingTask(false);
   };
 
-  // Hero tile — blue filled
   if (isHero) {
     return (
-      <div style={{
-        background: C.blue, borderRadius: 16,
-        padding: mobile ? "22px 20px" : "28px 30px",
-        gridColumn: mobile ? "span 1" : "span 2",
-        gridRow: mobile ? "span 1" : "span 2",
-        position: "relative", overflow: "hidden",
-        display: "flex", flexDirection: "column",
-        minHeight: mobile ? "auto" : 360,
-        boxShadow: "0 4px 16px rgba(28,43,222,0.22)",
-      }}>
-        {/* Decorative clover */}
+      <div style={{ background: C.blue, borderRadius: 16, padding: mobile ? "22px 20px" : "28px 30px", gridColumn: mobile ? "span 1" : "span 2", gridRow: mobile ? "span 1" : "span 2", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", minHeight: mobile ? "auto" : 360, boxShadow: "0 4px 16px rgba(28,43,222,0.22)" }}>
         <div style={{ position: "absolute", right: -60, top: -60, opacity: 0.06 }}>
-          <svg width={mobile?180:260} height={mobile?180:260} viewBox="0 0 60 60" fill="none">
-            <circle cx="30" cy="9" r="10" fill="#fff"/>
-            <circle cx="30" cy="51" r="10" fill="#fff"/>
-            <circle cx="9" cy="30" r="10" fill="#fff"/>
-            <circle cx="51" cy="30" r="10" fill="#fff"/>
-            <circle cx="30" cy="30" r="6" fill="#fff"/>
-          </svg>
+          <svg width={mobile?180:260} height={mobile?180:260} viewBox="0 0 60 60" fill="none"><circle cx="30" cy="9" r="10" fill="#fff"/><circle cx="30" cy="51" r="10" fill="#fff"/><circle cx="9" cy="30" r="10" fill="#fff"/><circle cx="51" cy="30" r="10" fill="#fff"/><circle cx="30" cy="30" r="6" fill="#fff"/></svg>
         </div>
-
         {isCurrentUser && <div style={{ position: "absolute", top: 14, right: 14, background: "rgba(255,255,255,0.18)", borderRadius: 100, padding: "2px 10px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 700, color: "#fff", letterSpacing: "0.05em", textTransform: "uppercase" }}>You</div>}
-
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
           <Avatar name={member.name} size={42} gradient={false}/>
           <div>
@@ -554,7 +361,6 @@ function MemberCard({ member, entry, lastEntry, isCurrentUser, isAdmin, token, w
             <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>{member.role || member.email}</div>
           </div>
         </div>
-
         {!submitted ? (
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8 }}>
             <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: "rgba(255,255,255,0.4)" }}>No update yet this week</div>
@@ -566,45 +372,13 @@ function MemberCard({ member, entry, lastEntry, isCurrentUser, isAdmin, token, w
             {blockers.length > 0 && (
               <div style={{ marginBottom: 4 }}>
                 <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.38)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>Blockers</div>
-                {blockers.map((b, i) => {
-                  const text = typeof b === "object" ? b.text : b;
-                  const resolved = typeof b === "object" ? b.resolved : false;
-                  return (
-                    <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", background: resolved ? "rgba(255,255,255,0.05)" : "rgba(222,28,119,0.25)", borderRadius: 10, padding: "9px 12px", marginBottom: 8, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: resolved ? "rgba(255,255,255,0.3)" : "#ffb3d0", lineHeight: 1.45, transition: "all 0.2s" }}>
-                      <span style={{ flexShrink: 0 }}>{resolved ? "✓" : "⚠"}</span>
-                      <span style={{ flex: 1, textDecoration: resolved ? "line-through" : "none" }}>{text}</span>
-                      {canEdit && !resolved && <button onClick={(e) => { e.stopPropagation(); resolveBlocker(i); }} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: 6, padding: "6px 12px", color: "#fff", cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0, position: "relative", zIndex: 10, minWidth: 80, textAlign: "center" }}>✓ Resolve</button>}
-                      {resolved && <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, color: "rgba(255,255,255,0.3)", fontWeight: 600, whiteSpace: "nowrap" }}>Resolved</span>}
-                    </div>
-                  );
-                })}
+                {blockers.map((b, i) => { const text = typeof b === "object" ? b.text : b; const resolved = typeof b === "object" ? b.resolved : false; return (<div key={i} style={{ display: "flex", gap: 8, alignItems: "center", background: resolved ? "rgba(255,255,255,0.05)" : "rgba(222,28,119,0.25)", borderRadius: 10, padding: "9px 12px", marginBottom: 8, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: resolved ? "rgba(255,255,255,0.3)" : "#ffb3d0", lineHeight: 1.45, transition: "all 0.2s" }}><span style={{ flexShrink: 0 }}>{resolved ? "✓" : "⚠"}</span><span style={{ flex: 1, textDecoration: resolved ? "line-through" : "none" }}>{text}</span>{canEdit && !resolved && <button onClick={(e) => { e.stopPropagation(); resolveBlocker(i); }} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: 6, padding: "6px 12px", color: "#fff", cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0, position: "relative", zIndex: 10, minWidth: 80, textAlign: "center" }}>✓ Resolve</button>}{resolved && <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, color: "rgba(255,255,255,0.3)", fontWeight: 600, whiteSpace: "nowrap" }}>Resolved</span>}</div>); })}
               </div>
             )}
-            {tasks.length > 0 && (
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                  <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.38)", letterSpacing: "0.1em", textTransform: "uppercase" }}>This week</span>
-                  <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, color: "rgba(255,255,255,0.38)", fontWeight: 600 }}>{done}/{tasks.length}</span>
-                </div>
-                <div style={{ height: 3, background: "rgba(255,255,255,0.18)", borderRadius: 2 }}>
-                  <div style={{ height: 3, borderRadius: 2, background: "#fff", width: `${tasks.length?(done/tasks.length)*100:0}%`, transition: "width 0.4s" }}/>
-                </div>
-              </div>
-            )}
+            {tasks.length > 0 && (<div style={{ marginBottom: 14 }}><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}><span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.38)", letterSpacing: "0.1em", textTransform: "uppercase" }}>This week</span><span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, color: "rgba(255,255,255,0.38)", fontWeight: 600 }}>{done}/{tasks.length}</span></div><div style={{ height: 3, background: "rgba(255,255,255,0.18)", borderRadius: 2 }}><div style={{ height: 3, borderRadius: 2, background: "#fff", width: `${tasks.length?(done/tasks.length)*100:0}%`, transition: "width 0.4s" }}/></div></div>)}
             <div style={{ flex: 1 }}>
-              {tasks.map(t => (
-                <HeroTaskRow key={t.id} task={t} onToggle={handleToggle} onEdit={handleEdit} onDelete={handleDelete} isCurrentUser={isCurrentUser}/>
-              ))}
-              {isCurrentUser && (
-                addingTask ? (
-                  <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                    <input autoFocus value={newTask} onChange={e => setNewTask(e.target.value)} onKeyDown={e => { if(e.key==="Enter") handleAddTask(); if(e.key==="Escape") setAddingTask(false); }} placeholder="Add a task..." style={{ flex: 1, background: "rgba(255,255,255,0.15)", border: "1.5px solid rgba(255,255,255,0.3)", borderRadius: 6, padding: "5px 10px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: "#fff", outline: "none" }}/>
-                    <button onClick={handleAddTask} style={{ background: "rgba(255,255,255,0.2)", border: "none", borderRadius: 6, padding: "5px 10px", color: "#fff", cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontWeight: 600, fontSize: 12 }}>Add</button>
-                  </div>
-                ) : (
-                  <button onClick={() => setAddingTask(true)} style={{ background: "none", border: "none", cursor: "pointer", padding: "6px 0", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, color: "rgba(255,255,255,0.4)", display: "flex", alignItems: "center", gap: 4, marginTop: 4 }}>+ add task</button>
-                )
-              )}
+              {tasks.map(t => (<HeroTaskRow key={t.id} task={t} onToggle={handleToggle} onEdit={handleEdit} onDelete={handleDelete} isCurrentUser={isCurrentUser}/>))}
+              {isCurrentUser && (addingTask ? (<div style={{ display: "flex", gap: 6, marginTop: 8 }}><input autoFocus value={newTask} onChange={e => setNewTask(e.target.value)} onKeyDown={e => { if(e.key==="Enter") handleAddTask(); if(e.key==="Escape") setAddingTask(false); }} placeholder="Add a task..." style={{ flex: 1, background: "rgba(255,255,255,0.15)", border: "1.5px solid rgba(255,255,255,0.3)", borderRadius: 6, padding: "5px 10px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: "#fff", outline: "none" }}/><button onClick={handleAddTask} style={{ background: "rgba(255,255,255,0.2)", border: "none", borderRadius: 6, padding: "5px 10px", color: "#fff", cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontWeight: 600, fontSize: 12 }}>Add</button></div>) : (<button onClick={() => setAddingTask(true)} style={{ background: "none", border: "none", cursor: "pointer", padding: "6px 0", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, color: "rgba(255,255,255,0.4)", display: "flex", alignItems: "center", gap: 4, marginTop: 4 }}>+ add task</button>))}
             </div>
             <div style={{ marginTop: 12, paddingTop: 10, borderTop: "0.5px solid rgba(255,255,255,0.12)" }}>
               <LastWeek completedLast={completedLast} doneTasks={lastDoneTasks} onLight={false}/>
@@ -615,87 +389,23 @@ function MemberCard({ member, entry, lastEntry, isCurrentUser, isAdmin, token, w
     );
   }
 
-  // Standard tile
   return (
-    <div style={{
-      background: "#fff", borderRadius: 16,
-      padding: mobile ? "20px 18px" : "24px 22px",
-      gridColumn: span === "wide" && !mobile ? "span 2" : "span 1",
-      gridRow: span === "tall" && !mobile ? "span 2" : "span 1",
-      border: isBlocked ? `1.5px solid ${C.pink}30` : `1px solid ${C.gray200}`,
-      boxShadow: isBlocked ? `0 0 0 1px ${C.pink}18, 0 4px 16px rgba(28,43,222,0.08)` : "0 1px 4px rgba(28,43,222,0.08)",
-      display: "flex", flexDirection: "column",
-      position: "relative", overflow: "hidden",
-    }}>
+    <div style={{ background: "#fff", borderRadius: 16, padding: mobile ? "20px 18px" : "24px 22px", gridColumn: span === "wide" && !mobile ? "span 2" : "span 1", gridRow: span === "tall" && !mobile ? "span 2" : "span 1", border: isBlocked ? `1.5px solid ${C.pink}30` : `1px solid ${C.gray200}`, boxShadow: isBlocked ? `0 0 0 1px ${C.pink}18, 0 4px 16px rgba(28,43,222,0.08)` : "0 1px 4px rgba(28,43,222,0.08)", display: "flex", flexDirection: "column", position: "relative", overflow: "hidden" }}>
       {isBlocked && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: C.pink }}/>}
       {isCurrentUser && <div style={{ position: "absolute", top: 14, right: 14, background: C.lavender, borderRadius: 100, padding: "2px 9px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 700, color: C.blue, letterSpacing: "0.05em", textTransform: "uppercase" }}>You</div>}
-
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
         <Avatar name={member.name} size={38}/>
-        <div>
-          <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontWeight: 700, fontSize: submitted?22:18, color: submitted?C.gray800:C.gray200, letterSpacing: "-0.02em", lineHeight: 1 }}>{member.name?.split(" ")[0]}</div>
-          <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, color: C.gray400, marginTop: 2 }}>{member.role || member.email}</div>
-        </div>
+        <div><div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontWeight: 700, fontSize: submitted?22:18, color: submitted?C.gray800:C.gray200, letterSpacing: "-0.02em", lineHeight: 1 }}>{member.name?.split(" ")[0]}</div><div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, color: C.gray400, marginTop: 2 }}>{member.role || member.email}</div></div>
         <div style={{ marginLeft: "auto" }}><Badge status={submitted ? (isBlocked?"blocked":"on-track") : "missing"}/></div>
       </div>
-
       {!submitted ? (
-        <div style={{ flex: 1, display: "flex", alignItems: "flex-end" }}>
-          <div style={{ background: C.gray50, borderRadius: 10, padding: "8px 12px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, color: C.gray400, lineHeight: 1.4, width: "100%" }}>
-            No update yet — DM <span style={{ color: C.blue, fontWeight: 600 }}>Clover Pulse</span> on Slack
-          </div>
-        </div>
+        <div style={{ flex: 1, display: "flex", alignItems: "flex-end" }}><div style={{ background: C.gray50, borderRadius: 10, padding: "8px 12px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, color: C.gray400, lineHeight: 1.4, width: "100%" }}>No update yet — DM <span style={{ color: C.blue, fontWeight: 600 }}>Clover Pulse</span> on Slack</div></div>
       ) : (
         <>
           <ProgressBar tasks={tasks}/>
           {note && <p style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: C.gray600, fontStyle: "italic", lineHeight: 1.55, margin: "12px 0" }}>"{note}"</p>}
-
-          {isBlocked && (
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 700, color: `${C.pink}80`, letterSpacing: "0.09em", textTransform: "uppercase", marginBottom: 6 }}>Blockers</div>
-              {blockers.map((b,i) => {
-                const text = typeof b === "object" ? b.text : b;
-                const resolved = typeof b === "object" ? b.resolved : false;
-                return (
-                  <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", background: resolved ? C.gray50 : "#FFF0F3", border: `1px solid ${resolved ? C.gray200 : "#FFB3C0"}`, borderRadius: 10, padding: "9px 12px", marginBottom: 6, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12.5, color: resolved ? C.gray400 : C.error, lineHeight: 1.45, transition: "all 0.2s" }}>
-                    <span style={{ flexShrink: 0 }}>{resolved ? "✓" : "⚠"}</span>
-                    <span style={{ flex: 1, textDecoration: resolved ? "line-through" : "none" }}>{text}</span>
-                    {canEdit && !resolved && <button onClick={(e) => { e.stopPropagation(); resolveBlocker(i); }} style={{ background: "#fff", border: `1.5px solid ${C.error}`, borderRadius: 6, padding: "6px 12px", color: C.error, cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0, position: "relative", zIndex: 10, minWidth: 80, textAlign: "center" }}>✓ Resolve</button>}
-                    {resolved && <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, color: C.gray400, fontWeight: 600, whiteSpace: "nowrap" }}>Resolved</span>}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {tasks.length > 0 && (
-            <>
-              <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 700, color: C.gray400, letterSpacing: "0.09em", textTransform: "uppercase", marginBottom: 6, marginTop: 4 }}>
-                This week · {done}/{tasks.length}
-              </div>
-              <div style={{ flex: 1 }}>
-                {isCurrentUser
-                  ? tasks.map(t => <TaskRow key={t.id} task={t} onToggle={handleToggle} onEdit={handleEdit} onDelete={handleDelete}/>)
-                  : tasks.map(t => (
-                    <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", opacity: t.done ? 0.35 : 1 }}>
-                      <DSCheckbox checked={t.done} onChange={() => {}}/>
-                      <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: C.gray800, textDecoration: t.done ? "line-through" : "none" }}>{t.text}</span>
-                    </div>
-                  ))
-                }
-                {isCurrentUser && (
-                  addingTask ? (
-                    <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                      <input autoFocus value={newTask} onChange={e => setNewTask(e.target.value)} onKeyDown={e => { if(e.key==="Enter") handleAddTask(); if(e.key==="Escape") setAddingTask(false); }} placeholder="Add a task..." style={{ flex: 1, border: `1.5px solid ${C.blue}`, borderRadius: 6, padding: "5px 10px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: C.gray800, outline: "none", boxShadow: `0 0 0 3px rgba(28,43,222,0.10)` }}/>
-                      <BtnPrimary onClick={handleAddTask} style={{ padding: "5px 12px", fontSize: 12 }}>Add</BtnPrimary>
-                    </div>
-                  ) : (
-                    <button onClick={() => setAddingTask(true)} style={{ background: "none", border: "none", cursor: "pointer", padding: "5px 0", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, color: C.gray400, display: "flex", alignItems: "center", gap: 3, marginTop: 4 }}>+ add task</button>
-                  )
-                )}
-              </div>
-            </>
-          )}
+          {isBlocked && (<div style={{ marginBottom: 12 }}><div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 700, color: `${C.pink}80`, letterSpacing: "0.09em", textTransform: "uppercase", marginBottom: 6 }}>Blockers</div>{blockers.map((b,i) => { const text = typeof b === "object" ? b.text : b; const resolved = typeof b === "object" ? b.resolved : false; return (<div key={i} style={{ display: "flex", gap: 8, alignItems: "center", background: resolved ? C.gray50 : "#FFF0F3", border: `1px solid ${resolved ? C.gray200 : "#FFB3C0"}`, borderRadius: 10, padding: "9px 12px", marginBottom: 6, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12.5, color: resolved ? C.gray400 : C.error, lineHeight: 1.45, transition: "all 0.2s" }}><span style={{ flexShrink: 0 }}>{resolved ? "✓" : "⚠"}</span><span style={{ flex: 1, textDecoration: resolved ? "line-through" : "none" }}>{text}</span>{canEdit && !resolved && <button onClick={(e) => { e.stopPropagation(); resolveBlocker(i); }} style={{ background: "#fff", border: `1.5px solid ${C.error}`, borderRadius: 6, padding: "6px 12px", color: C.error, cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0, position: "relative", zIndex: 10, minWidth: 80, textAlign: "center" }}>✓ Resolve</button>}{resolved && <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, color: C.gray400, fontWeight: 600, whiteSpace: "nowrap" }}>Resolved</span>}</div>); })}</div>)}
+          {tasks.length > 0 && (<><div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 700, color: C.gray400, letterSpacing: "0.09em", textTransform: "uppercase", marginBottom: 6, marginTop: 4 }}>This week · {done}/{tasks.length}</div><div style={{ flex: 1 }}>{isCurrentUser ? tasks.map(t => <TaskRow key={t.id} task={t} onToggle={handleToggle} onEdit={handleEdit} onDelete={handleDelete}/>) : tasks.map(t => (<div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", opacity: t.done ? 0.35 : 1 }}><DSCheckbox checked={t.done} onChange={() => {}}/><span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: C.gray800, textDecoration: t.done ? "line-through" : "none" }}>{t.text}</span></div>))}{isCurrentUser && (addingTask ? (<div style={{ display: "flex", gap: 6, marginTop: 8 }}><input autoFocus value={newTask} onChange={e => setNewTask(e.target.value)} onKeyDown={e => { if(e.key==="Enter") handleAddTask(); if(e.key==="Escape") setAddingTask(false); }} placeholder="Add a task..." style={{ flex: 1, border: `1.5px solid ${C.blue}`, borderRadius: 6, padding: "5px 10px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: C.gray800, outline: "none", boxShadow: `0 0 0 3px rgba(28,43,222,0.10)` }}/><BtnPrimary onClick={handleAddTask} style={{ padding: "5px 12px", fontSize: 12 }}>Add</BtnPrimary></div>) : (<button onClick={() => setAddingTask(true)} style={{ background: "none", border: "none", cursor: "pointer", padding: "5px 0", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, color: C.gray400, display: "flex", alignItems: "center", gap: 3, marginTop: 4 }}>+ add task</button>))}</div></>)}
           <LastWeek completedLast={completedLast} doneTasks={lastDoneTasks}/>
         </>
       )}
@@ -703,7 +413,6 @@ function MemberCard({ member, entry, lastEntry, isCurrentUser, isAdmin, token, w
   );
 }
 
-// ── Stat tile ─────────────────────────────────────────────────────────
 function StatTile({ label, value, accent, sub }) {
   return (
     <div style={{ background: "#fff", borderRadius: 14, padding: "18px 20px", border: `1px solid ${C.gray200}`, boxShadow: "0 1px 4px rgba(28,43,222,0.08)" }}>
@@ -714,7 +423,6 @@ function StatTile({ label, value, accent, sub }) {
   );
 }
 
-// ── WhatsApp tile ─────────────────────────────────────────────────────
 function WaTile() {
   return (
     <div style={{ background: "#fff", borderRadius: 14, padding: "18px 20px", border: `1px solid ${C.gray200}`, boxShadow: "0 1px 4px rgba(28,43,222,0.08)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
@@ -729,7 +437,6 @@ function WaTile() {
   );
 }
 
-// ── Profile menu ──────────────────────────────────────────────────────
 function ProfileMenu({ user, profile, onSignOut, isAdmin, onAdmin }) {
   const [open, setOpen] = useState(false);
   return (
@@ -744,44 +451,14 @@ function ProfileMenu({ user, profile, onSignOut, isAdmin, onAdmin }) {
             <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, color: C.gray400, marginTop: 1 }}>{user?.email}</div>
             {profile?.whatsapp && <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, color: "#25D366", marginTop: 3 }}>WhatsApp: {profile.whatsapp}</div>}
           </div>
-          {isAdmin && (
-            <button onClick={() => { setOpen(false); onAdmin(); }} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "10px 16px", background: "none", border: "none", cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: C.blue, textAlign: "left", fontWeight: 500 }}>
-              ⚙ Admin
-            </button>
-          )}
-          <button onClick={onSignOut} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "10px 16px", background: "none", border: "none", cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: C.error, textAlign: "left" }}>
-            Sign out
-          </button>
+          {isAdmin && (<button onClick={() => { setOpen(false); onAdmin(); }} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "10px 16px", background: "none", border: "none", cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: C.blue, textAlign: "left", fontWeight: 500 }}>⚙ Admin</button>)}
+          <button onClick={onSignOut} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "10px 16px", background: "none", border: "none", cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: C.error, textAlign: "left" }}>Sign out</button>
         </div>
       )}
     </div>
   );
 }
 
-// ── LOGIN SCREEN ──────────────────────────────────────────────────────
-function LoginScreen() {
-  const [loading, setLoading] = useState(false);
-  return (
-    <div style={{ minHeight: "100vh", background: C.gray50, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <div style={{ background: "#fff", borderRadius: 16, padding: "48px 44px", maxWidth: 380, width: "100%", border: `1px solid ${C.gray200}`, boxShadow: "0 8px 40px rgba(28,43,222,0.12)", textAlign: "center" }}>
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: 36 }}>
-          <CloverLogo height={32}/>
-        </div>
-        <h1 style={{ fontFamily: "'Poppins',Arial,sans-serif", fontWeight: 700, fontSize: 22, color: C.gray800, letterSpacing: "-0.02em", marginBottom: 8 }}>{(() => { const h = new Date().getHours(); return h < 12 ? "Good morning." : h < 18 ? "Good afternoon." : "Good evening."; })()}</h1>
-        <p style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 14, color: C.gray400, marginBottom: 36, lineHeight: 1.55 }}>
-          Sign in with your <strong style={{ color: C.gray800 }}>@rideclover.com</strong> Google account to see your team's week.
-        </p>
-        <button onClick={() => { setLoading(true); sb.signInWithGoogle(); }} disabled={loading} style={{ width: "100%", padding: "13px 20px", background: "#fff", border: `1px solid ${C.gray200}`, borderRadius: 10, cursor: loading?"not-allowed":"pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 14, fontWeight: 600, color: C.gray800, boxShadow: "0 1px 4px rgba(28,43,222,0.08)", opacity: loading?0.6:1 }}>
-          {loading ? <Spinner color="#4285F4" size={18}/> : <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/><path fill="#FBBC05" d="M3.964 10.71c-.18-.54-.282-1.117-.282-1.71s.102-1.17.282-1.71V4.958H.957C.347 6.173 0 7.548 0 9s.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z"/></svg>}
-          Continue with Google
-        </button>
-        <p style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, color: C.gray200, marginTop: 24, lineHeight: 1.5 }}>Only @rideclover.com accounts can sign in.</p>
-      </div>
-    </div>
-  );
-}
-
-// ── ONBOARDING SCREEN ─────────────────────────────────────────────────
 function OnboardingScreen({ user, token, onComplete }) {
   const [phone, setPhone] = useState(""); const [role, setRole] = useState(""); const [saving, setSaving] = useState(false); const [error, setError] = useState("");
   const firstName = user?.user_metadata?.full_name?.split(" ")[0] || "there";
@@ -815,7 +492,6 @@ function OnboardingScreen({ user, token, onComplete }) {
   );
 }
 
-// ── ADMIN SCREEN ──────────────────────────────────────────────────────
 function AdminScreen({ token, onBack }) {
   const [profiles, setProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -823,91 +499,56 @@ function AdminScreen({ token, onBack }) {
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    (async () => {
-      const p = await sb.getAllProfiles(token);
-      setProfiles(Array.isArray(p) ? p : []);
-      setLoading(false);
-    })();
+    (async () => { const p = await sb.getAllProfiles(token); setProfiles(Array.isArray(p) ? p : []); setLoading(false); })();
   }, [token]);
 
   const handleDelete = async (userId) => {
     setDeleting(true);
     await sb.deleteProfile(token, userId);
     setProfiles(p => p.filter(x => x.user_id !== userId));
-    setConfirmDelete(null);
-    setDeleting(false);
+    setConfirmDelete(null); setDeleting(false);
   };
+
+  const sortedProfiles = [...profiles].sort((a,b) => (a.name||"").localeCompare(b.name||""));
 
   return (
     <div style={{ minHeight: "100vh", background: C.gray50 }}>
-      {/* Header */}
       <header style={{ background: C.darkest, height: 64, display: "flex", alignItems: "center", padding: "0 32px", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100 }}>
         <CloverLogo height={26} white/>
-        <button onClick={onBack} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: "rgba(255,255,255,0.6)", display: "flex", alignItems: "center", gap: 6 }}>
-          ← Back to dashboard
-        </button>
+        <button onClick={onBack} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: "rgba(255,255,255,0.6)", display: "flex", alignItems: "center", gap: 6 }}>← Back to dashboard</button>
       </header>
-
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "40px 28px" }}>
         <h1 style={{ fontFamily: "'Poppins',Arial,sans-serif", fontWeight: 700, fontSize: 22, color: C.gray800, marginBottom: 8 }}>Team members</h1>
         <p style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 14, color: C.gray400, marginBottom: 32 }}>Manage who has access to Clover Pulse.</p>
-
-        {/* Table */}
         <div style={{ background: "#fff", border: `1px solid ${C.gray200}`, borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 4px rgba(28,43,222,0.08)" }}>
-          {/* Table header */}
           <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1.5fr 1fr 80px", background: C.blue, padding: "0 20px" }}>
-            {["Name","Email","WhatsApp","Role",""].map((h,i) => (
-              <div key={i} style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, fontWeight: 600, color: "#fff", textTransform: "uppercase", letterSpacing: "0.5px", padding: "14px 0" }}>{h}</div>
-            ))}
+            {["Name","Email","WhatsApp","Role",""].map((h,i) => (<div key={i} style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, fontWeight: 600, color: "#fff", textTransform: "uppercase", letterSpacing: "0.5px", padding: "14px 0" }}>{h}</div>))}
           </div>
-
-          {loading ? (
-            <div style={{ padding: 40, display: "flex", justifyContent: "center" }}><Spinner/></div>
-          ) : profiles.length === 0 ? (
-            <div style={{ padding: 40, textAlign: "center", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 14, color: C.gray400 }}>No team members yet.</div>
-          ) : sortedProfiles.map((p, i) => (
+          {loading ? (<div style={{ padding: 40, display: "flex", justifyContent: "center" }}><Spinner/></div>) : sortedProfiles.length === 0 ? (<div style={{ padding: 40, textAlign: "center", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 14, color: C.gray400 }}>No team members yet.</div>) : sortedProfiles.map((p, i) => (
             <div key={p.user_id} style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1.5fr 1fr 80px", padding: "0 20px", background: i % 2 === 0 ? "#fff" : C.gray50, borderTop: `0.5px solid ${C.gray100}` }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 0" }}>
-                <Avatar name={p.name} size={32} gradient/>
-                <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 14, color: C.gray800, fontWeight: 500 }}>{p.name}</span>
-              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 0" }}><Avatar name={p.name} size={32} gradient/><span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 14, color: C.gray800, fontWeight: 500 }}>{p.name}</span></div>
               <div style={{ display: "flex", alignItems: "center", padding: "14px 0", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: C.gray600 }}>{p.email}</div>
               <div style={{ display: "flex", alignItems: "center", padding: "14px 0", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: p.whatsapp ? "#25D366" : C.gray200 }}>{p.whatsapp || "—"}</div>
               <div style={{ display: "flex", alignItems: "center", padding: "14px 0", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: C.gray400 }}>{p.role || "—"}</div>
-              <div style={{ display: "flex", alignItems: "center", padding: "14px 0" }}>
-                <BtnDestructive onClick={() => setConfirmDelete(p)} style={{ padding: "4px 10px", fontSize: 11 }}>Remove</BtnDestructive>
-              </div>
+              <div style={{ display: "flex", alignItems: "center", padding: "14px 0" }}><BtnDestructive onClick={() => setConfirmDelete(p)} style={{ padding: "4px 10px", fontSize: 11 }}>Remove</BtnDestructive></div>
             </div>
           ))}
         </div>
-
-        {/* Invite section */}
         <div style={{ background: "#fff", border: `1px solid ${C.gray200}`, borderRadius: 12, padding: 28, marginTop: 24, boxShadow: "0 1px 4px rgba(28,43,222,0.08)" }}>
           <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 15, fontWeight: 700, color: C.gray800, marginBottom: 8 }}>Invite team members</div>
-          <p style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: C.gray400, lineHeight: 1.6, marginBottom: 16 }}>
-            Share this link with anyone who has an @rideclover.com Google account. They'll be prompted to add their WhatsApp number on first login.
-          </p>
+          <p style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: C.gray400, lineHeight: 1.6, marginBottom: 16 }}>Share this link with anyone who has an @rideclover.com Google account.</p>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <div style={{ flex: 1, background: C.gray50, border: `1.5px solid ${C.gray200}`, borderRadius: 8, padding: "10px 14px", fontFamily: "monospace", fontSize: 13, color: C.gray600 }}>
-              https://clover-pulse.vercel.app
-            </div>
-            <BtnGhost onClick={() => navigator.clipboard?.writeText("https://clover-pulse.vercel.app")}>Copy link</BtnGhost>
+            <div style={{ flex: 1, background: C.gray50, border: `1.5px solid ${C.gray200}`, borderRadius: 8, padding: "10px 14px", fontFamily: "monospace", fontSize: 13, color: C.gray600 }}>https://pulse.clover.tools</div>
+            <BtnGhost onClick={() => navigator.clipboard?.writeText("https://pulse.clover.tools")}>Copy link</BtnGhost>
           </div>
         </div>
       </div>
-
-      {/* Confirm delete dialog */}
       {confirmDelete && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(2,10,64,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 24 }}>
           <div style={{ background: "#fff", borderRadius: 16, padding: "32px 36px", maxWidth: 400, width: "100%", boxShadow: "0 16px 48px rgba(28,43,222,0.22)" }}>
             <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontWeight: 700, fontSize: 17, color: C.gray800, marginBottom: 10 }}>Remove {confirmDelete.name}?</div>
-            <p style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 14, color: C.gray400, lineHeight: 1.6, marginBottom: 28 }}>
-              This will remove their profile and WhatsApp link from Pulse. They'll need to go through onboarding again if they sign back in.
-            </p>
-            <div style={{ display: "flex", gap: 12 }}>
-              <BtnDestructive onClick={() => handleDelete(confirmDelete.user_id)} loading={deleting}>Yes, remove</BtnDestructive>
-              <BtnGhost onClick={() => setConfirmDelete(null)}>Cancel</BtnGhost>
-            </div>
+            <p style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 14, color: C.gray400, lineHeight: 1.6, marginBottom: 28 }}>This will remove their profile and WhatsApp link from Pulse.</p>
+            <div style={{ display: "flex", gap: 12 }}><BtnDestructive onClick={() => handleDelete(confirmDelete.user_id)} loading={deleting}>Yes, remove</BtnDestructive><BtnGhost onClick={() => setConfirmDelete(null)}>Cancel</BtnGhost></div>
           </div>
         </div>
       )}
@@ -915,34 +556,23 @@ function AdminScreen({ token, onBack }) {
   );
 }
 
-// ── Week navigator ────────────────────────────────────────────────────
 function WeekNav({ currentWeek, allWeeks, onChange }) {
   const idx = allWeeks.indexOf(currentWeek);
   const canBack = idx < allWeeks.length - 1;
   const canForward = idx > 0;
   const isCurrentWeek = idx === 0;
-
   const navBtn = (onClick, disabled, label, icon) => (
-    <button onClick={onClick} disabled={disabled} style={{
-      background: "none", border: "none", cursor: disabled ? "not-allowed" : "pointer",
-      width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center",
-      color: disabled ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.6)",
-      fontSize: 18, fontWeight: 300,
-    }} aria-label={label}>{icon}</button>
+    <button onClick={onClick} disabled={disabled} style={{ background: "none", border: "none", cursor: disabled ? "not-allowed" : "pointer", width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: disabled ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.6)", fontSize: 18, fontWeight: 300 }} aria-label={label}>{icon}</button>
   );
-
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
       {navBtn(() => onChange(allWeeks[idx + 1]), !canBack, "Previous week", "‹")}
-      <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, color: "rgba(255,255,255,0.5)", minWidth: 110, textAlign: "center" }}>
-        {isCurrentWeek ? "This week" : formatWeekLabel(currentWeek)}
-      </span>
+      <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, color: "rgba(255,255,255,0.5)", minWidth: 110, textAlign: "center" }}>{isCurrentWeek ? "This week" : formatWeekLabel(currentWeek)}</span>
       {navBtn(() => onChange(allWeeks[idx - 1]), !canForward, "Next week", "›")}
     </div>
   );
 }
 
-// ── Completion rate tile ──────────────────────────────────────────────
 function CompletionTile({ profiles, entries }) {
   if (!entries.length) return null;
   const rates = profiles.map(p => {
@@ -952,29 +582,16 @@ function CompletionTile({ profiles, entries }) {
     const pct = Math.round((done / e.tasks.length) * 100);
     return { name: p.name?.split(" ")[0], pct, done, total: e.tasks.length };
   }).filter(Boolean);
-
   if (!rates.length) return null;
   const avg = Math.round(rates.reduce((s, r) => s + r.pct, 0) / rates.length);
-
   return (
     <div style={{ background: "#fff", borderRadius: 14, padding: "16px 18px", border: `1px solid ${C.gray200}`, boxShadow: "0 1px 4px rgba(28,43,222,0.08)" }}>
       <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 700, color: C.gray400, letterSpacing: "0.09em", textTransform: "uppercase", marginBottom: 10 }}>Completion rate</div>
       <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontWeight: 700, fontSize: 28, color: avg >= 70 ? C.success : avg >= 40 ? C.warning : C.error, letterSpacing: "-0.03em", lineHeight: 1, marginBottom: 8 }}>{avg}%</div>
-      {rates.map((r, i) => (
-        <div key={i} style={{ marginBottom: 6 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-            <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, color: C.gray600 }}>{r.name}</span>
-            <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, color: C.gray400 }}>{r.done}/{r.total}</span>
-          </div>
-          <div style={{ height: 3, background: C.gray100, borderRadius: 2 }}>
-            <div style={{ height: 3, borderRadius: 2, background: r.pct >= 70 ? C.success : r.pct >= 40 ? C.warning : C.error, width: `${r.pct}%`, transition: "width 0.4s" }}/>
-          </div>
-        </div>
-      ))}
+      {rates.map((r, i) => (<div key={i} style={{ marginBottom: 6 }}><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}><span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, color: C.gray600 }}>{r.name}</span><span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, color: C.gray400 }}>{r.done}/{r.total}</span></div><div style={{ height: 3, background: C.gray100, borderRadius: 2 }}><div style={{ height: 3, borderRadius: 2, background: r.pct >= 70 ? C.success : r.pct >= 40 ? C.warning : C.error, width: `${r.pct}%`, transition: "width 0.4s" }}/></div></div>))}
     </div>
   );
 }
-
 
 function DashboardScreen({ user, profile, token, onSignOut, onAdmin, isAdmin }) {
   const mobile = useIsMobile();
@@ -988,172 +605,69 @@ function DashboardScreen({ user, profile, token, onSignOut, onAdmin, isAdmin }) 
 
   const thisWeek = currentWeekOf();
   const isHistoryView = selectedWeek !== thisWeek;
-
-  const prevWeek = (() => {
-    const d = new Date(selectedWeek + "T00:00:00");
-    d.setDate(d.getDate() - 7);
-    return d.toISOString().split("T")[0];
-  })();
+  const prevWeek = (() => { const d = new Date(selectedWeek + "T00:00:00"); d.setDate(d.getDate() - 7); return d.toISOString().split("T")[0]; })();
 
   const loadData = async () => {
-    const [profs, ents, lastEnts, weeks] = await Promise.all([
-      sb.getAllProfiles(token),
-      sb.getPulseEntries(token, selectedWeek),
-      sb.getPulseEntries(token, prevWeek),
-      sb.getAllWeeks(token),
-    ]);
+    const [profs, ents, lastEnts, weeks] = await Promise.all([sb.getAllProfiles(token), sb.getPulseEntries(token, selectedWeek), sb.getPulseEntries(token, prevWeek), sb.getAllWeeks(token)]);
     if (Array.isArray(profs)) setProfiles(profs);
     if (Array.isArray(ents)) setEntries(ents);
     if (Array.isArray(lastEnts)) setLastEntries(lastEnts);
-    if (Array.isArray(weeks)) {
-      const withCurrent = weeks.includes(thisWeek) ? weeks : [thisWeek, ...weeks];
-      setAllWeeks(withCurrent);
-    }
+    if (Array.isArray(weeks)) { const withCurrent = weeks.includes(thisWeek) ? weeks : [thisWeek, ...weeks]; setAllWeeks(withCurrent); }
   };
 
   useEffect(() => { (async () => { await loadData(); setLoading(false); })(); }, [token, selectedWeek]);
-
   useEffect(() => {
-    if (isHistoryView) return; // Don't auto-refresh history
+    if (isHistoryView) return;
     const onFocus = () => loadData();
     const onVisibility = () => { if (document.visibilityState === "visible") loadData(); };
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", onFocus); document.addEventListener("visibilitychange", onVisibility);
     return () => { window.removeEventListener("focus", onFocus); document.removeEventListener("visibilitychange", onVisibility); };
   }, [token, selectedWeek]);
 
   const handleRefresh = async () => { setRefreshing(true); await loadData(); setRefreshing(false); };
   const handleWeekChange = (week) => { setSelectedWeek(week); setEntries([]); setLastEntries([]); };
-
   const getEntry = (uid) => entries.find(e => e.user_id === uid) || null;
   const getLastEntry = (uid) => lastEntries.find(e => e.user_id === uid) || null;
   const submitted = profiles.filter(p => getEntry(p.user_id)?.submitted_at).length;
-  const blocked = profiles.filter(p => {
-    const e = getEntry(p.user_id);
-    return (e?.blockers || []).some(b => !(typeof b === "object" ? b.resolved : false));
-  }).length;
+  const blocked = profiles.filter(p => { const e = getEntry(p.user_id); return (e?.blockers || []).some(b => !(typeof b === "object" ? b.resolved : false)); }).length;
   const allTasks = entries.flatMap(e => e.tasks||[]);
   const doneTasks = allTasks.filter(t => t.done).length;
+  const sortedProfiles = [...profiles.filter(p => p.user_id === user?.id), ...profiles.filter(p => p.user_id !== user?.id)];
+  const getSpan = (p) => { const e = getEntry(p.user_id); if (p.user_id === user?.id) return "hero"; if ((e?.blockers||[]).filter(b => !(typeof b === "object" ? b.resolved : false)).length > 0) return "wide"; if ((e?.tasks||[]).length >= 4) return "tall"; return "small"; };
 
-  // Always show the logged-in user's card first
-  const sortedProfiles = [
-    ...profiles.filter(p => p.user_id === user?.id),
-    ...profiles.filter(p => p.user_id !== user?.id),
-  ];
-
-  const getSpan = (p, i) => {
-    const e = getEntry(p.user_id);
-    if (p.user_id === user?.id) return "hero";
-    if ((e?.blockers||[]).filter(b => !(typeof b === "object" ? b.resolved : false)).length > 0) return "wide";
-    if ((e?.tasks||[]).length >= 4) return "tall";
-    return "small";
-  };
-
-  if (loading) return (
-    <div style={{ minHeight: "100vh", background: C.gray50, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
-        <CloverLogo height={30}/><Spinner color={C.blue} size={22}/>
-      </div>
-    </div>
-  );
+  if (loading) return (<div style={{ minHeight: "100vh", background: C.gray50, display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}><CloverLogo height={30}/><Spinner color={C.blue} size={22}/></div></div>);
 
   return (
     <div style={{ minHeight: "100vh", background: C.gray50 }}>
-      {/* Top header bar — Darkest Blue, 64px */}
-      <header style={{
-        position: "sticky", top: 0, zIndex: 100,
-        background: C.darkest,
-        height: 64,
-        display: "flex", alignItems: "center",
-        padding: mobile ? "0 16px" : "0 32px",
-        justifyContent: "space-between",
-        boxShadow: "0 2px 8px rgba(2,10,64,0.3)",
-      }}>
+      <header style={{ position: "sticky", top: 0, zIndex: 100, background: C.darkest, height: 64, display: "flex", alignItems: "center", padding: mobile ? "0 16px" : "0 32px", justifyContent: "space-between", boxShadow: "0 2px 8px rgba(2,10,64,0.3)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <CloverLogo height={mobile?28:36} white/>
           <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontWeight: 300, fontSize: mobile?13:15, color: "rgba(255,255,255,0.5)", marginLeft: 6, letterSpacing: "0.06em", textTransform: "uppercase" }}>Pulse</span>
         </div>
-
-        {!mobile && allWeeks.length > 1 && (
-          <WeekNav currentWeek={selectedWeek} allWeeks={allWeeks} onChange={handleWeekChange}/>
-        )}
-
+        {!mobile && allWeeks.length > 1 && <WeekNav currentWeek={selectedWeek} allWeeks={allWeeks} onChange={handleWeekChange}/>}
         <div style={{ display: "flex", alignItems: "center", gap: mobile?10:16 }}>
-          {/* Submission badge */}
-          <div style={{
-            display: "flex", alignItems: "center", gap: 5,
-            background: submitted===profiles.length&&profiles.length>0 ? "rgba(28,43,222,0.35)" : "rgba(222,28,119,0.35)",
-            borderRadius: 100, padding: "4px 11px",
-          }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, background: submitted===profiles.length&&profiles.length>0 ? "rgba(28,43,222,0.35)" : "rgba(222,28,119,0.35)", borderRadius: 100, padding: "4px 11px" }}>
             <div style={{ width: 6, height: 6, borderRadius: "50%", background: submitted===profiles.length&&profiles.length>0 ? "#a0aaff" : "#ff8fc0" }}/>
             <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, fontWeight: 600, color: "#fff" }}>{submitted}/{profiles.length}</span>
           </div>
-
-          {/* Refresh — only show for current week */}
-          {!isHistoryView && (
-            <button onClick={handleRefresh} style={{ background: "none", border: "none", cursor: "pointer", width: 34, height: 34, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.5)" }}>
-              {refreshing ? <Spinner color="rgba(255,255,255,0.6)" size={16}/> : (
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path d="M13.5 8A5.5 5.5 0 112.5 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                  <path d="M13.5 4v4h-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              )}
-            </button>
-          )}
-
+          {!isHistoryView && (<button onClick={handleRefresh} style={{ background: "none", border: "none", cursor: "pointer", width: 34, height: 34, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.5)" }}>{refreshing ? <Spinner color="rgba(255,255,255,0.6)" size={16}/> : (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13.5 8A5.5 5.5 0 112.5 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M13.5 4v4h-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>)}</button>)}
           <ProfileMenu user={user} profile={profile} onSignOut={onSignOut} isAdmin={isAdmin} onAdmin={onAdmin}/>
         </div>
       </header>
-
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: mobile?"16px 14px 60px":"32px 28px 80px" }}>
-
-        {/* Mobile week navigator */}
-        {mobile && allWeeks.length > 1 && (
-          <div style={{ display: "flex", justifyContent: "center", marginBottom: 14, background: C.darkest, borderRadius: 12, padding: "8px 16px" }}>
-            <WeekNav currentWeek={selectedWeek} allWeeks={allWeeks} onChange={handleWeekChange}/>
-          </div>
-        )}
-
-        {/* History mode banner */}
-        {isHistoryView && (
-          <div style={{ background: C.lavender, borderRadius: 12, padding: "10px 16px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: C.blue, fontWeight: 500 }}>
-              📅 Viewing {formatWeekLabel(selectedWeek)} — read only
-            </span>
-            <button onClick={() => handleWeekChange(thisWeek)} style={{ background: C.blue, border: "none", borderRadius: 8, padding: "5px 12px", color: "#fff", cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, fontWeight: 600 }}>
-              Back to this week
-            </button>
-          </div>
-        )}
-
+        {mobile && allWeeks.length > 1 && (<div style={{ display: "flex", justifyContent: "center", marginBottom: 14, background: C.darkest, borderRadius: 12, padding: "8px 16px" }}><WeekNav currentWeek={selectedWeek} allWeeks={allWeeks} onChange={handleWeekChange}/></div>)}
+        {isHistoryView && (<div style={{ background: C.lavender, borderRadius: 12, padding: "10px 16px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between" }}><span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: C.blue, fontWeight: 500 }}>📅 Viewing {formatWeekLabel(selectedWeek)} — read only</span><button onClick={() => handleWeekChange(thisWeek)} style={{ background: C.blue, border: "none", borderRadius: 8, padding: "5px 12px", color: "#fff", cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, fontWeight: 600 }}>Back to this week</button></div>)}
         {profiles.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "80px 20px" }}>
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}><CloverLogo height={36}/></div>
-            <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 16, color: C.gray400, marginTop: 8 }}>No team members yet.</div>
-            <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: C.gray200, marginTop: 6 }}>Share clover-pulse.vercel.app with your team.</div>
-          </div>
+          <div style={{ textAlign: "center", padding: "80px 20px" }}><div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}><CloverLogo height={36}/></div><div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 16, color: C.gray400, marginTop: 8 }}>No team members yet.</div></div>
         ) : mobile ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <StatTile label="Submitted" value={`${submitted}/${profiles.length}`} accent={C.blue}/>
-              <StatTile label="Blockers" value={blocked} accent={blocked>0?C.pink:C.gray800} sub={blocked>0?"Needs attention":"All clear"}/>
-            </div>
-            {sortedProfiles.map((p,i) => {
-              const span = getSpan(p,i);
-              return <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={!isHistoryView && p.user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} mobile span={span}/>;
-            })}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              {!isHistoryView && <WaTile/>}
-              <StatTile label="Done" value={`${doneTasks}/${allTasks.length}`} accent={C.blue}/>
-              <CompletionTile profiles={profiles} entries={entries}/>
-            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}><StatTile label="Submitted" value={`${submitted}/${profiles.length}`} accent={C.blue}/><StatTile label="Blockers" value={blocked} accent={blocked>0?C.pink:C.gray800} sub={blocked>0?"Needs attention":"All clear"}/></div>
+            {sortedProfiles.map((p,i) => <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={!isHistoryView && p.user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} mobile span={getSpan(p)}/>)}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>{!isHistoryView && <WaTile/>}<StatTile label="Done" value={`${doneTasks}/${allTasks.length}`} accent={C.blue}/><CompletionTile profiles={profiles} entries={entries}/></div>
           </div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gridAutoRows: "minmax(170px,auto)", gap: 14 }}>
-            {sortedProfiles.map((p,i) => {
-              const span = getSpan(p,i);
-              return <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={!isHistoryView && p.user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} mobile={false} span={span}/>;
-            })}
+            {sortedProfiles.map((p) => <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={!isHistoryView && p.user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} mobile={false} span={getSpan(p)}/>)}
             <StatTile label="Submitted" value={`${submitted}/${profiles.length}`} accent={C.blue} sub={submitted<profiles.length?`${profiles.length-submitted} missing`:"All in"}/>
             <StatTile label="Blockers" value={blocked} accent={blocked>0?C.pink:C.gray800} sub={blocked>0?"Needs attention":"All clear"}/>
             <StatTile label="Tasks" value={allTasks.length} sub={`${doneTasks} done`} accent={C.blue}/>
@@ -1161,15 +675,13 @@ function DashboardScreen({ user, profile, token, onSignOut, onAdmin, isAdmin }) 
             {!isHistoryView && <WaTile/>}
           </div>
         )}
-        <div style={{ textAlign: "center", marginTop: 44, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, color: C.gray200 }}>
-          Clover Pulse · Internal · rideclover.com
-        </div>
+        <div style={{ textAlign: "center", marginTop: 44, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, color: C.gray200 }}>Clover Pulse · Internal · rideclover.com</div>
       </main>
     </div>
   );
 }
 
-// ── ROOT ──────────────────────────────────────────────────────────────
+// ── ROOT — matches portal and radar auth pattern ──────────────────────
 export default function App() {
   const [screen, setScreen] = useState("loading");
   const [token, setToken] = useState(null);
@@ -1177,24 +689,52 @@ export default function App() {
   const [profile, setProfile] = useState(null);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const t = await sb.getSession();
-        if (!t) { setScreen("login"); return; }
-        const u = await sb.getUser(t);
-        if (!u || !u.email?.endsWith("@rideclover.com")) { sb.clearSession(); setScreen("login"); return; }
-        const p = await sb.getProfile(t, u.id);
-        setToken(t); setUser(u); setProfile(p);
-        setScreen(p?.whatsapp ? "dashboard" : "onboarding");
-      } catch { setScreen("login"); }
-    })();
+    if (!supabase) { setScreen("loading"); return; }
+
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session?.user?.email?.endsWith("@rideclover.com")) {
+        // No valid session — auto-redirect to Google OAuth, same as Radar
+        supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: {
+            redirectTo: window.location.origin,
+            queryParams: { hd: "rideclover.com" },
+          },
+        });
+        return; // Keep showing spinner during redirect
+      }
+
+      const accessToken = session.access_token;
+      const u = session.user;
+      const p = await sb.getProfile(accessToken, u.id);
+      setToken(accessToken);
+      setUser(u);
+      setProfile(p);
+      setScreen(p?.whatsapp ? "dashboard" : "onboarding");
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!session?.user?.email?.endsWith("@rideclover.com")) {
+        setToken(null); setUser(null); setProfile(null);
+        setScreen("loading");
+        return;
+      }
+      const accessToken = session.access_token;
+      const u = session.user;
+      const p = await sb.getProfile(accessToken, u.id);
+      setToken(accessToken);
+      setUser(u);
+      setProfile(p);
+      setScreen(p?.whatsapp ? "dashboard" : "onboarding");
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const handleSignOut = async () => {
-    if (token) await sb.signOut(token);
-    sb.clearSession();
+    await supabase.auth.signOut();
     setToken(null); setUser(null); setProfile(null);
-    setScreen("login");
+    setScreen("loading");
   };
 
   const isAdmin = ADMIN_EMAILS.includes(user?.email);
@@ -1212,7 +752,6 @@ export default function App() {
           <CloverLogo height={32}/><Spinner color={C.blue} size={24}/>
         </div>
       )}
-      {screen === "login" && <LoginScreen/>}
       {screen === "onboarding" && user && (
         <OnboardingScreen user={user} token={token} onComplete={async () => {
           const p = await sb.getProfile(token, user.id);
@@ -1220,11 +759,7 @@ export default function App() {
         }}/>
       )}
       {screen === "dashboard" && user && (
-        <DashboardScreen user={user} profile={profile} token={token}
-          onSignOut={handleSignOut}
-          isAdmin={isAdmin}
-          onAdmin={() => setScreen("admin")}
-        />
+        <DashboardScreen user={user} profile={profile} token={token} onSignOut={handleSignOut} isAdmin={isAdmin} onAdmin={() => setScreen("admin")}/>
       )}
       {screen === "admin" && user && isAdmin && (
         <AdminScreen token={token} onBack={() => setScreen("dashboard")}/>
