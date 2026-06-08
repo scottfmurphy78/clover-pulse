@@ -349,7 +349,7 @@ function MemberCard({ member, entry, lastEntry, isCurrentUser, isAdmin, token, w
 
   if (isHero) {
     return (
-      <div style={{ background: C.blue, borderRadius: 16, padding: mobile ? "22px 20px" : "28px 30px", gridColumn: mobile ? "span 1" : "span 2", gridRow: mobile ? "span 1" : "span 2", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", minHeight: mobile ? "auto" : 360, boxShadow: "0 4px 16px rgba(28,43,222,0.22)" }}>
+      <div style={{ background: C.blue, borderRadius: 16, padding: mobile ? "22px 20px" : "28px 30px", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", flex: mobile ? undefined : 1, minHeight: mobile ? "auto" : 360, boxShadow: "0 4px 16px rgba(28,43,222,0.22)" }}>
         <div style={{ position: "absolute", right: -60, top: -60, opacity: 0.06 }}>
           <svg width={mobile?180:260} height={mobile?180:260} viewBox="0 0 60 60" fill="none"><circle cx="30" cy="9" r="10" fill="#fff"/><circle cx="30" cy="51" r="10" fill="#fff"/><circle cx="9" cy="30" r="10" fill="#fff"/><circle cx="51" cy="30" r="10" fill="#fff"/><circle cx="30" cy="30" r="6" fill="#fff"/></svg>
         </div>
@@ -390,7 +390,7 @@ function MemberCard({ member, entry, lastEntry, isCurrentUser, isAdmin, token, w
   }
 
   return (
-    <div style={{ background: "#fff", borderRadius: 16, padding: mobile ? "20px 18px" : "24px 22px", gridColumn: span === "wide" && !mobile ? "span 2" : "span 1", gridRow: span === "tall" && !mobile ? "span 2" : "span 1", border: isBlocked ? `1.5px solid ${C.pink}30` : `1px solid ${C.gray200}`, boxShadow: isBlocked ? `0 0 0 1px ${C.pink}18, 0 4px 16px rgba(28,43,222,0.08)` : "0 1px 4px rgba(28,43,222,0.08)", display: "flex", flexDirection: "column", position: "relative", overflow: "hidden" }}>
+    <div style={{ background: "#fff", borderRadius: 16, padding: mobile ? "20px 18px" : "24px 22px", border: isBlocked ? `1.5px solid ${C.pink}30` : `1px solid ${C.gray200}`, boxShadow: isBlocked ? `0 0 0 1px ${C.pink}18, 0 4px 16px rgba(28,43,222,0.08)` : "0 1px 4px rgba(28,43,222,0.08)", display: "flex", flexDirection: "column", position: "relative", overflow: "hidden" }}>
       {isBlocked && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: C.pink }}/>}
       {isCurrentUser && <div style={{ position: "absolute", top: 14, right: 14, background: C.lavender, borderRadius: 100, padding: "2px 9px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 700, color: C.blue, letterSpacing: "0.05em", textTransform: "uppercase" }}>You</div>}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
@@ -405,7 +405,7 @@ function MemberCard({ member, entry, lastEntry, isCurrentUser, isAdmin, token, w
           <ProgressBar tasks={tasks}/>
           {note && <p style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: C.gray600, fontStyle: "italic", lineHeight: 1.55, margin: "12px 0" }}>"{note}"</p>}
           {isBlocked && (<div style={{ marginBottom: 12 }}><div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 700, color: `${C.pink}80`, letterSpacing: "0.09em", textTransform: "uppercase", marginBottom: 6 }}>Blockers</div>{blockers.map((b,i) => { const text = typeof b === "object" ? b.text : b; const resolved = typeof b === "object" ? b.resolved : false; return (<div key={i} style={{ display: "flex", gap: 8, alignItems: "center", background: resolved ? C.gray50 : "#FFF0F3", border: `1px solid ${resolved ? C.gray200 : "#FFB3C0"}`, borderRadius: 10, padding: "9px 12px", marginBottom: 6, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12.5, color: resolved ? C.gray400 : C.error, lineHeight: 1.45, transition: "all 0.2s" }}><span style={{ flexShrink: 0 }}>{resolved ? "✓" : "⚠"}</span><span style={{ flex: 1, textDecoration: resolved ? "line-through" : "none" }}>{text}</span>{canEdit && !resolved && <button onClick={(e) => { e.stopPropagation(); resolveBlocker(i); }} style={{ background: "#fff", border: `1.5px solid ${C.error}`, borderRadius: 6, padding: "6px 12px", color: C.error, cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0, position: "relative", zIndex: 10, minWidth: 80, textAlign: "center" }}>✓ Resolve</button>}{resolved && <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, color: C.gray400, fontWeight: 600, whiteSpace: "nowrap" }}>Resolved</span>}</div>); })}</div>)}
-          {tasks.length > 0 && (<><div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 700, color: C.gray400, letterSpacing: "0.09em", textTransform: "uppercase", marginBottom: 6, marginTop: 4 }}>This week · {done}/{tasks.length}</div><div style={{ flex: 1 }}>{isCurrentUser ? tasks.map(t => <TaskRow key={t.id} task={t} onToggle={handleToggle} onEdit={handleEdit} onDelete={handleDelete}/>) : tasks.map(t => (<div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", opacity: t.done ? 0.35 : 1 }}><DSCheckbox checked={t.done} onChange={() => {}}/><span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: C.gray800, textDecoration: t.done ? "line-through" : "none" }}>{t.text}</span></div>))}{isCurrentUser && (addingTask ? (<div style={{ display: "flex", gap: 6, marginTop: 8 }}><input autoFocus value={newTask} onChange={e => setNewTask(e.target.value)} onKeyDown={e => { if(e.key==="Enter") handleAddTask(); if(e.key==="Escape") setAddingTask(false); }} placeholder="Add a task..." style={{ flex: 1, border: `1.5px solid ${C.blue}`, borderRadius: 6, padding: "5px 10px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: C.gray800, outline: "none", boxShadow: `0 0 0 3px rgba(28,43,222,0.10)` }}/><BtnPrimary onClick={handleAddTask} style={{ padding: "5px 12px", fontSize: 12 }}>Add</BtnPrimary></div>) : (<button onClick={() => setAddingTask(true)} style={{ background: "none", border: "none", cursor: "pointer", padding: "5px 0", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, color: C.gray400, display: "flex", alignItems: "center", gap: 3, marginTop: 4 }}>+ add task</button>))}</div></>)}
+          {tasks.length > 0 && (<><div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 700, color: C.gray400, letterSpacing: "0.09em", textTransform: "uppercase", marginBottom: 6, marginTop: 4 }}>This week · {done}/{tasks.length}</div><div style={{ flex: 1 }}>{isCurrentUser ? tasks.map(t => <TaskRow key={t.id} task={t} onToggle={handleToggle} onEdit={handleEdit} onDelete={handleDelete}/>) : tasks.map(t => { const cs = carryStyle(t); return (<div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: cs ? "5px 8px 5px 6px" : "5px 0", opacity: t.done ? 0.35 : 1, background: cs && !t.done ? cs.bg : "transparent", borderRadius: cs ? 8 : 0, borderLeft: cs && !t.done ? `3px solid ${cs.border}` : "none", marginBottom: cs ? 2 : 0 }}><DSCheckbox checked={t.done} onChange={() => {}}/><span style={{ flex: 1, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: C.gray800, textDecoration: t.done ? "line-through" : "none" }}>{t.text}</span>{cs && !t.done && <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 9, fontWeight: 700, color: cs.labelColor, whiteSpace: "nowrap", letterSpacing: "0.03em" }}>{cs.label}</span>}</div>); })}{isCurrentUser && (addingTask ? (<div style={{ display: "flex", gap: 6, marginTop: 8 }}><input autoFocus value={newTask} onChange={e => setNewTask(e.target.value)} onKeyDown={e => { if(e.key==="Enter") handleAddTask(); if(e.key==="Escape") setAddingTask(false); }} placeholder="Add a task..." style={{ flex: 1, border: `1.5px solid ${C.blue}`, borderRadius: 6, padding: "5px 10px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: C.gray800, outline: "none", boxShadow: `0 0 0 3px rgba(28,43,222,0.10)` }}/><BtnPrimary onClick={handleAddTask} style={{ padding: "5px 12px", fontSize: 12 }}>Add</BtnPrimary></div>) : (<button onClick={() => setAddingTask(true)} style={{ background: "none", border: "none", cursor: "pointer", padding: "5px 0", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, color: C.gray400, display: "flex", alignItems: "center", gap: 3, marginTop: 4 }}>+ add task</button>))}</div></>)}
           <LastWeek completedLast={completedLast} doneTasks={lastDoneTasks}/>
         </>
       )}
@@ -514,7 +514,7 @@ function AdminScreen({ token, onBack }) {
   return (
     <div style={{ minHeight: "100vh", background: C.gray50 }}>
       <header style={{ background: C.darkest, height: 64, display: "flex", alignItems: "center", padding: "0 32px", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100 }}>
-        <CloverLogo height={26} white/>
+        <a href="https://clover.tools" style={{ textDecoration: "none" }}><CloverLogo height={26} white/></a>
         <button onClick={onBack} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: "rgba(255,255,255,0.6)", display: "flex", alignItems: "center", gap: 6 }}>← Back to dashboard</button>
       </header>
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "40px 28px" }}>
@@ -634,18 +634,21 @@ function DashboardScreen({ user, profile, token, onSignOut, onAdmin, isAdmin }) 
   const doneTasks = allTasks.filter(t => t.done).length;
   const sortedProfiles = [...profiles.filter(p => p.user_id === user?.id), ...profiles.filter(p => p.user_id !== user?.id)];
   const getSpan = (p) => { const e = getEntry(p.user_id); if (p.user_id === user?.id) return "hero"; if ((e?.blockers||[]).filter(b => !(typeof b === "object" ? b.resolved : false)).length > 0) return "wide"; if ((e?.tasks||[]).length >= 4) return "tall"; return "small"; };
+  const otherProfiles = sortedProfiles.slice(1);
+  const colMid = Math.ceil(otherProfiles.length / 2);
 
   if (loading) return (<div style={{ minHeight: "100vh", background: C.gray50, display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}><CloverLogo height={30}/><Spinner color={C.blue} size={22}/></div></div>);
 
   return (
     <div style={{ minHeight: "100vh", background: C.gray50 }}>
       <header style={{ position: "sticky", top: 0, zIndex: 100, background: C.darkest, height: 64, display: "flex", alignItems: "center", padding: mobile ? "0 16px" : "0 32px", justifyContent: "space-between", boxShadow: "0 2px 8px rgba(2,10,64,0.3)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <a href="https://clover.tools" style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none" }}>
           <CloverLogo height={mobile?28:36} white/>
           <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontWeight: 300, fontSize: mobile?13:15, color: "rgba(255,255,255,0.5)", marginLeft: 6, letterSpacing: "0.06em", textTransform: "uppercase" }}>Pulse</span>
-        </div>
+        </a>
         {!mobile && allWeeks.length > 1 && <WeekNav currentWeek={selectedWeek} allWeeks={allWeeks} onChange={handleWeekChange}/>}
         <div style={{ display: "flex", alignItems: "center", gap: mobile?10:16 }}>
+          {!mobile && <a href="https://clover.tools" style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "transparent", border: "1.5px solid rgba(255,255,255,0.18)", borderRadius: 8, color: "rgba(255,255,255,0.6)", fontFamily: "'Poppins',Arial,sans-serif", fontWeight: 600, fontSize: 12, letterSpacing: "0.03em", padding: "6px 14px", textDecoration: "none" }}>← All tools</a>}
           <div style={{ display: "flex", alignItems: "center", gap: 5, background: submitted===profiles.length&&profiles.length>0 ? "rgba(28,43,222,0.35)" : "rgba(222,28,119,0.35)", borderRadius: 100, padding: "4px 11px" }}>
             <div style={{ width: 6, height: 6, borderRadius: "50%", background: submitted===profiles.length&&profiles.length>0 ? "#a0aaff" : "#ff8fc0" }}/>
             <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, fontWeight: 600, color: "#fff" }}>{submitted}/{profiles.length}</span>
@@ -666,14 +669,26 @@ function DashboardScreen({ user, profile, token, onSignOut, onAdmin, isAdmin }) 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>{!isHistoryView && <WaTile/>}<StatTile label="Done" value={`${doneTasks}/${allTasks.length}`} accent={C.blue}/><CompletionTile profiles={profiles} entries={entries}/></div>
           </div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gridAutoRows: "minmax(170px,auto)", gap: 14 }}>
-            {sortedProfiles.map((p) => <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={!isHistoryView && p.user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} mobile={false} span={getSpan(p)}/>)}
-            <StatTile label="Submitted" value={`${submitted}/${profiles.length}`} accent={C.blue} sub={submitted<profiles.length?`${profiles.length-submitted} missing`:"All in"}/>
-            <StatTile label="Blockers" value={blocked} accent={blocked>0?C.pink:C.gray800} sub={blocked>0?"Needs attention":"All clear"}/>
-            <StatTile label="Tasks" value={allTasks.length} sub={`${doneTasks} done`} accent={C.blue}/>
-            <CompletionTile profiles={profiles} entries={entries}/>
-            {!isHistoryView && <WaTile/>}
-          </div>
+          <>
+            <div style={{ display: "flex", gap: 14, alignItems: "flex-start", marginBottom: 20 }}>
+              <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+                <MemberCard member={sortedProfiles[0]} entry={getEntry(sortedProfiles[0].user_id)} lastEntry={getLastEntry(sortedProfiles[0].user_id)} isCurrentUser={!isHistoryView && sortedProfiles[0].user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} mobile={false} span={getSpan(sortedProfiles[0])}/>
+              </div>
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 14 }}>
+                {otherProfiles.slice(0, colMid).map((p) => <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={!isHistoryView && p.user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} mobile={false} span={getSpan(p)}/>)}
+              </div>
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 14 }}>
+                {otherProfiles.slice(colMid).map((p) => <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={!isHistoryView && p.user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} mobile={false} span={getSpan(p)}/>)}
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, alignItems: "start" }}>
+              <StatTile label="Submitted" value={`${submitted}/${profiles.length}`} accent={C.blue} sub={submitted<profiles.length?`${profiles.length-submitted} missing`:"All in"}/>
+              <StatTile label="Blockers" value={blocked} accent={blocked>0?C.pink:C.gray800} sub={blocked>0?"Needs attention":"All clear"}/>
+              <StatTile label="Tasks" value={allTasks.length} sub={`${doneTasks} done`} accent={C.blue}/>
+              <CompletionTile profiles={profiles} entries={entries}/>
+              {!isHistoryView && <WaTile/>}
+            </div>
+          </>
         )}
         <div style={{ textAlign: "center", marginTop: 44, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, color: C.gray200 }}>Clover Pulse · Internal · rideclover.com</div>
       </main>
