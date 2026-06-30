@@ -64,6 +64,13 @@ function formatDate(iso) {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "long" });
 }
 
+// week_of is the Monday; "end of week" = that Sunday.
+function endOfWeek(weekOf) {
+  const d = new Date(weekOf + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + 6);
+  return d.toISOString().split("T")[0];
+}
+
 // ── JOB 1: Carryover incomplete tasks from last week ──────────────────
 async function runCarryover() {
   console.log("Running carryover...");
@@ -87,6 +94,7 @@ async function runCarryover() {
         id: `co_${t.id}_${Date.now()}`,
         done: false,
         carried_over: true,
+        deadline: endOfWeek(thisWeek),
       }));
 
       const thisEntries = await sbFetch(`pulse_entries?user_id=eq.${profile.user_id}&week_of=eq.${thisWeek}&select=*`);

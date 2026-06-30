@@ -104,10 +104,15 @@ async function transcribeAudio(audioBuffer, mimeType = "audio/webm", fileType = 
   return data.text;
 }
 
-async function parseWithClaude(transcript, existingEntry) {
+async function parseWithClaude(transcript, existingEntry, roster = [], speakerName = "") {
+  const names = roster.map(p => (p.name || "").split(" ")[0]).filter(Boolean).join(", ");
   const system = `Extract weekly work updates from this transcript. Return ONLY a raw JSON object — no markdown, no backticks, no code blocks. Just the JSON.
-Schema: {"note":"one sentence max 15 words","tasks":[{"id":"t1","text":"task","done":false,"carried_over":false}],"completed_last":["thing done last week"],"blockers":["blocker"]}
-Rules: tasks=this week, completed_last=last week, blockers=blocking items. Short task text. Empty arrays if none.`;
+Schema: {"note":"one sentence max 15 words","tasks":[{"id":"t1","text":"task","done":false,"carried_over":false,"assignee":null,"deadline":null}],"completed_last":["thing done last week"],"blockers":["blocker"]}
+Rules:
+- tasks = things to do THIS week. completed_last = done last week. blockers = blocking items. Short task text. Empty arrays if none.
+- The speaker is ${speakerName || "the sender"}. Team members: ${names || "none"}.
+- assignee: if the speaker assigns a task to a teammate by name (e.g. "assign Antonio to fix the website"), set assignee to that teammate's first name exactly as listed above. For the speaker's own tasks, set assignee to null.
+- deadline: an ISO date "YYYY-MM-DD" ONLY if a specific due date or weekday is stated; otherwise null.`;
 
   const userPrompt = existingEntry
     ? `Existing:\n${JSON.stringify(existingEntry)}\n\nNew update (merge):\n${transcript}`
@@ -143,6 +148,58 @@ async function savePulseEntry(userId, weekOf, parsed, existingEntry) {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+// week_of is the Monday; "end of week" = that Sunday.
+function endOfWeek(weekOf) {
+  const d = new Date(weekOf + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + 6);
+  return d.toISOString().split("T")[0];
+}
+
+// Append a task to a teammate's weekly entry, creating the entry if needed.
+async function addAssignedTask(userId, weekOf, task) {
+  const rows = await sbFetch(`pulse_entries?user_id=eq.${userId}&week_of=eq.${weekOf}&select=*`);
+  const entry = Array.isArray(rows) ? rows[0] : null;
+  if (entry) {
+    const existing = entry.tasks || [];
+    if (existing.some(t => t.id === task.id)) return;
+    return sbFetch(`pulse_entries?user_id=eq.${userId}&week_of=eq.${weekOf}`, {
+      method: "PATCH", body: JSON.stringify({ tasks: [...existing, task] }),
+    });
+  }
+  return sbFetch("pulse_entries", {
+    method: "POST",
+    body: JSON.stringify({ user_id: userId, week_of: weekOf, note: null, tasks: [task], completed_last: [], blockers: [], submitted_at: null }),
+  });
+}
+
+// Split parsed tasks into the speaker's own vs ones assigned to teammates.
+// Matches assignee on first name; unknown/ambiguous names stay with the speaker.
+function distributeTasks(tasks, roster, speaker, weekOf) {
+  const byFirst = {};
+  for (const p of roster) {
+    const fn = (p.name || "").split(" ")[0].toLowerCase();
+    if (fn) (byFirst[fn] = byFirst[fn] || []).push(p);
+  }
+  const speakerFirst = (speaker.name || "").split(" ")[0].toLowerCase();
+  const ownTasks = [], assigned = [], unmatched = [];
+  tasks.forEach((t, i) => {
+    const task = { ...t };
+    const who = (task.assignee || "").trim().toLowerCase();
+    delete task.assignee;
+    if (!task.deadline) task.deadline = endOfWeek(weekOf);
+    const matches = byFirst[who];
+    if (!who || who === speakerFirst) {
+      ownTasks.push(task);
+    } else if (matches && matches.length === 1 && matches[0].user_id !== speaker.user_id) {
+      assigned.push({ target: matches[0], task: { ...task, id: `a${Date.now()}_${i}`, done: false, assigned_by: speaker.user_id } });
+    } else {
+      unmatched.push(t.assignee);
+      ownTasks.push(task);
+    }
+  });
+  return { ownTasks, assigned, unmatched };
 }
 
 async function notifyAdminsOfBlockers(profile, blockers) {
@@ -261,16 +318,32 @@ export default async function handler(req, res) {
     const existingEntry = Array.isArray(existingRaw) ? existingRaw[0] : null;
     console.log("Existing entry:", existingEntry ? "yes" : "no");
 
-    const parsed = await parseWithClaude(transcript, existingEntry);
+    const rosterRaw = await sbFetch("profiles?select=user_id,name");
+    const roster = Array.isArray(rosterRaw) ? rosterRaw : [];
+
+    const parsed = await parseWithClaude(transcript, existingEntry, roster, firstName);
+
+    // Pull out tasks the speaker assigned to teammates; keep the rest as their own.
+    const { ownTasks, assigned, unmatched } = distributeTasks(parsed.tasks || [], roster, profile, weekOf);
+    parsed.tasks = ownTasks;
+
     const saved = await savePulseEntry(profile.user_id, weekOf, parsed, existingEntry);
     console.log("Saved:", JSON.stringify(saved)?.substring(0, 150));
 
+    for (const { target, task } of assigned) {
+      await addAssignedTask(target.user_id, weekOf, task);
+      console.log(`Assigned task to ${target.name}`);
+    }
+
     if (parsed.blockers?.length) await notifyAdminsOfBlockers(profile, parsed.blockers);
 
-    const taskCount = parsed.tasks?.length || 0;
+    const taskCount = ownTasks.length;
     const blockerCount = parsed.blockers?.length || 0;
     const blockerNote = blockerCount > 0 ? `\n⚠️ I've flagged ${blockerCount} blocker${blockerCount > 1 ? "s" : ""} to the team.` : "";
-    await postToChannel(event.channel, `✅ Got it ${firstName}. *${taskCount} task${taskCount !== 1 ? "s" : ""}* logged for the week.${blockerNote}\n\nView the dashboard: https://clover-pulse.vercel.app`);
+    const assignNames = [...new Set(assigned.map(a => (a.target.name || "").split(" ")[0]))];
+    const assignNote = assigned.length > 0 ? `\n📌 Assigned ${assigned.length} task${assigned.length !== 1 ? "s" : ""} to ${assignNames.join(", ")}.` : "";
+    const unmatchedNote = unmatched.length ? `\n🤔 Couldn't find ${[...new Set(unmatched)].join(", ")} on the team — kept ${unmatched.length > 1 ? "those" : "that"} as your task${unmatched.length > 1 ? "s" : ""}.` : "";
+    await postToChannel(event.channel, `✅ Got it ${firstName}. *${taskCount} task${taskCount !== 1 ? "s" : ""}* logged for the week.${assignNote}${blockerNote}${unmatchedNote}\n\nView the dashboard: https://clover-pulse.vercel.app`);
     console.log("=== DONE ===");
 
   } catch (err) {

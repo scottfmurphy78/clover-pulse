@@ -87,6 +87,20 @@ function formatWeekLabel(iso) {
   const d = new Date(iso + "T00:00:00");
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 }
+// ── Deadline helpers ──────────────────────────────────────────────────
+// Weeks run Mon–Sun; week_of is the Monday, so "end of week" = that Sunday.
+function endOfWeek(weekOf) {
+  const d = new Date(weekOf + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + 6);
+  return d.toISOString().split("T")[0];
+}
+function taskDeadline(task, weekOf) { return task.deadline || endOfWeek(weekOf); }
+function formatDeadline(iso) {
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+function todayISO() { return new Date().toISOString().split("T")[0]; }
+function isOverdue(iso, done) { return !done && iso < todayISO(); }
 function useIsMobile() {
   const [m, setM] = useState(typeof window !== "undefined" ? window.innerWidth < 768 : false);
   useEffect(() => { const fn = () => setM(window.innerWidth < 768); window.addEventListener("resize", fn); return () => window.removeEventListener("resize", fn); }, []);
@@ -235,21 +249,86 @@ function carryStyle(task) {
   return { bg: "rgba(255,77,109,0.08)", border: "#FF4D6D", label: `↩ ${count}+ weeks`, labelColor: "#C00030" };
 }
 
-function TaskRow({ task, onToggle, onEdit, onDelete }) {
+// ── "↳ from X" attribution when a task was assigned by someone else ───
+function assignerLabel(task, ownerId, profiles, onDark = false) {
+  if (!task.assigned_by || task.assigned_by === ownerId || !profiles) return null;
+  const name = profiles.find(p => p.user_id === task.assigned_by)?.name?.split(" ")[0];
+  if (!name) return null;
+  return <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 9, fontWeight: 700, color: onDark ? "rgba(255,255,255,0.55)" : C.gray400, whiteSpace: "nowrap", letterSpacing: "0.03em" }}>↳ {name}</span>;
+}
+
+// ── Deadline chip — shows due date, owner can click to change ──────────
+function DeadlineChip({ iso, overdue, canEdit, onChange, onLight = false }) {
+  const [editing, setEditing] = useState(false);
+  if (editing && canEdit) {
+    return (
+      <input type="date" autoFocus defaultValue={iso}
+        onClick={e => e.stopPropagation()}
+        onChange={e => { if (e.target.value) onChange(e.target.value); setEditing(false); }}
+        onBlur={() => setEditing(false)}
+        style={{ border: `1.5px solid ${C.blue}`, borderRadius: 6, padding: "1px 5px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, color: C.gray800, outline: "none", colorScheme: "light" }}/>
+    );
+  }
+  const color = overdue ? (onLight ? C.error : "#ffb3d0") : (onLight ? C.gray400 : "rgba(255,255,255,0.5)");
+  return (
+    <span onClick={canEdit ? (e) => { e.stopPropagation(); setEditing(true); } : undefined}
+      title={overdue ? "Overdue" + (canEdit ? " — click to change" : "") : "Due" + (canEdit ? " — click to change" : "")}
+      style={{ display: "inline-flex", alignItems: "center", gap: 2, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 600, color, whiteSpace: "nowrap", cursor: canEdit ? "pointer" : "default", flexShrink: 0, letterSpacing: "0.02em" }}>
+      {overdue ? `⚠ ${formatDeadline(iso)}` : `due ${formatDeadline(iso)}`}
+    </span>
+  );
+}
+
+// ── Assignee dropdown — anyone can reassign a task to another member ───
+function AssigneeSelect({ profiles, ownerId, onAssign, onLight = false }) {
+  return (
+    <select value={ownerId}
+      onClick={e => e.stopPropagation()}
+      onChange={e => { e.stopPropagation(); if (e.target.value !== ownerId) onAssign(e.target.value); }}
+      title="Assign to…"
+      style={{ appearance: "none", WebkitAppearance: "none", background: onLight ? "rgba(255,255,255,0.14)" : C.gray50, border: `1px solid ${onLight ? "rgba(255,255,255,0.25)" : C.gray200}`, borderRadius: 6, padding: "2px 6px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 600, color: onLight ? "rgba(255,255,255,0.85)" : C.gray600, cursor: "pointer", outline: "none", maxWidth: 90, flexShrink: 0 }}>
+      {profiles.map(p => <option key={p.user_id} value={p.user_id} style={{ color: "#000" }}>{p.name?.split(" ")[0] || "?"}</option>)}
+    </select>
+  );
+}
+
+function TaskRow({ task, onToggle, onEdit, onDelete, onDeadline, weekOf, profiles, ownerId, onAssign }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(task.text);
   const save = () => { if (val.trim() && val !== task.text) onEdit(task.id, val.trim()); setEditing(false); };
   const cs = carryStyle(task);
+  const iso = taskDeadline(task, weekOf);
+  const overdue = isOverdue(iso, task.done);
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: cs ? "5px 8px 5px 6px" : "5px 0", opacity: task.done ? 0.38 : 1, transition: "opacity 0.18s", background: cs && !task.done ? cs.bg : "transparent", borderRadius: cs ? 8 : 0, borderLeft: cs && !task.done ? `3px solid ${cs.border}` : "none", marginBottom: cs ? 2 : 0 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: cs ? "5px 8px 5px 6px" : "5px 0", opacity: task.done ? 0.38 : 1, transition: "opacity 0.18s", background: cs && !task.done ? cs.bg : "transparent", borderRadius: cs ? 8 : 0, borderLeft: cs && !task.done ? `3px solid ${cs.border}` : "none", marginBottom: cs ? 2 : 0 }}>
       <DSCheckbox checked={task.done} onChange={() => onToggle(task.id)}/>
       {editing ? (
         <input autoFocus value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }} style={{ flex: 1, border: `1.5px solid ${C.blue}`, borderRadius: 6, padding: "3px 8px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: C.gray800, outline: "none", boxShadow: `0 0 0 3px rgba(28,43,222,0.10)` }}/>
       ) : (
         <span onClick={() => setEditing(true)} style={{ flex: 1, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: C.gray800, lineHeight: 1.45, cursor: "text", textDecoration: task.done ? "line-through" : "none" }}>{task.text}</span>
       )}
+      {assignerLabel(task, ownerId, profiles)}
       {cs && !task.done && <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 9, fontWeight: 700, color: cs.labelColor, whiteSpace: "nowrap", letterSpacing: "0.03em" }}>{cs.label}</span>}
+      <DeadlineChip iso={iso} overdue={overdue} canEdit onLight onChange={(d) => onDeadline(task.id, d)}/>
+      {profiles && <AssigneeSelect profiles={profiles} ownerId={ownerId} onAssign={(to) => onAssign(task.id, to)}/>}
       <button onClick={() => onDelete(task.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 4px", color: C.gray400, fontSize: 14, lineHeight: 1, opacity: 0.5, display: "flex", alignItems: "center" }}>×</button>
+    </div>
+  );
+}
+
+// ── Read-only row for another member's task — only the reassign dropdown is live ──
+function ReadOnlyTaskRow({ task, weekOf, profiles, ownerId, onAssign }) {
+  const cs = carryStyle(task);
+  const iso = taskDeadline(task, weekOf);
+  const overdue = isOverdue(iso, task.done);
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: cs ? "5px 8px 5px 6px" : "5px 0", opacity: task.done ? 0.35 : 1, background: cs && !task.done ? cs.bg : "transparent", borderRadius: cs ? 8 : 0, borderLeft: cs && !task.done ? `3px solid ${cs.border}` : "none", marginBottom: cs ? 2 : 0 }}>
+      <DSCheckbox checked={task.done} onChange={() => {}}/>
+      <span style={{ flex: 1, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: C.gray800, textDecoration: task.done ? "line-through" : "none" }}>{task.text}</span>
+      {assignerLabel(task, ownerId, profiles)}
+      {cs && !task.done && <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 9, fontWeight: 700, color: cs.labelColor, whiteSpace: "nowrap", letterSpacing: "0.03em" }}>{cs.label}</span>}
+      <DeadlineChip iso={iso} overdue={overdue} canEdit={false} onLight/>
+      {profiles && onAssign && <AssigneeSelect profiles={profiles} ownerId={ownerId} onAssign={(to) => onAssign(task.id, to)}/>}
     </div>
   );
 }
@@ -281,13 +360,15 @@ function LastWeek({ completedLast = [], doneTasks = [], onLight = true }) {
   );
 }
 
-function HeroTaskRow({ task, onToggle, onEdit, onDelete, isCurrentUser }) {
+function HeroTaskRow({ task, onToggle, onEdit, onDelete, onDeadline, isCurrentUser, weekOf, profiles, ownerId, onAssign }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(task.text);
   const save = () => { if (val.trim() && val !== task.text) onEdit(task.id, val.trim()); setEditing(false); };
   const cs = carryStyle(task);
+  const iso = taskDeadline(task, weekOf);
+  const overdue = isOverdue(iso, task.done);
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: cs ? "5px 8px 5px 6px" : "5px 0", opacity: task.done ? 0.35 : 1, transition: "opacity 0.18s", background: cs && !task.done ? (carryCount(task) === 1 ? "rgba(255,181,71,0.15)" : "rgba(255,77,109,0.15)") : "transparent", borderRadius: cs ? 8 : 0, borderLeft: cs && !task.done ? `3px solid ${cs.border}` : "none", marginBottom: cs ? 2 : 0 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: cs ? "5px 8px 5px 6px" : "5px 0", opacity: task.done ? 0.35 : 1, transition: "opacity 0.18s", background: cs && !task.done ? (carryCount(task) === 1 ? "rgba(255,181,71,0.15)" : "rgba(255,77,109,0.15)") : "transparent", borderRadius: cs ? 8 : 0, borderLeft: cs && !task.done ? `3px solid ${cs.border}` : "none", marginBottom: cs ? 2 : 0 }}>
       <div onClick={() => onToggle(task.id)} style={{ width: 18, height: 18, borderRadius: 4, flexShrink: 0, cursor: "pointer", border: task.done ? "none" : "2px solid rgba(255,255,255,0.4)", background: task.done ? "rgba(255,255,255,0.9)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s" }}>
         {task.done && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l2.5 2.5L9 1" stroke={C.blue} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
       </div>
@@ -296,20 +377,26 @@ function HeroTaskRow({ task, onToggle, onEdit, onDelete, isCurrentUser }) {
       ) : (
         <span onClick={() => isCurrentUser && setEditing(true)} style={{ flex: 1, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: "#fff", lineHeight: 1.45, cursor: isCurrentUser ? "text" : "default", textDecoration: task.done ? "line-through" : "none", opacity: task.done ? 0.5 : 1 }}>{task.text}</span>
       )}
+      {assignerLabel(task, ownerId, profiles, true)}
       {cs && !task.done && <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 9, fontWeight: 700, color: cs.labelColor, whiteSpace: "nowrap", letterSpacing: "0.03em" }}>{cs.label}</span>}
+      <DeadlineChip iso={iso} overdue={overdue} canEdit={isCurrentUser} onChange={(d) => onDeadline(task.id, d)}/>
+      {isCurrentUser && profiles && <AssigneeSelect profiles={profiles} ownerId={ownerId} onAssign={(to) => onAssign(task.id, to)} onLight/>}
       {isCurrentUser && <button onClick={() => onDelete(task.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 4px", color: "rgba(255,255,255,0.3)", fontSize: 14, lineHeight: 1 }}>×</button>}
     </div>
   );
 }
 
-function MemberCard({ member, entry, lastEntry, isCurrentUser, isAdmin, token, weekOf, onEntryUpdated, mobile, span }) {
+function MemberCard({ member, entry, lastEntry, isCurrentUser, isAdmin, token, weekOf, onEntryUpdated, mobile, span, allProfiles }) {
   const rawTasks = entry?.tasks || [];
   const [tasks, setTasks] = useState(rawTasks);
   const [blockers, setBlockers] = useState(entry?.blockers || []);
   const [saving, setSaving] = useState(false);
   const [addingTask, setAddingTask] = useState(false);
   const [newTask, setNewTask] = useState("");
+  const [newTaskAssignee, setNewTaskAssignee] = useState(member.user_id);
   useEffect(() => { setTasks(entry?.tasks || []); setBlockers(entry?.blockers || []); }, [entry]);
+  useEffect(() => { setNewTaskAssignee(member.user_id); }, [member.user_id]);
+  const profiles = allProfiles && allProfiles.length ? allProfiles : null;
 
   const note = entry?.note || null;
   const completedLast = entry?.completed_last || [];
@@ -331,6 +418,23 @@ function MemberCard({ member, entry, lastEntry, isCurrentUser, isAdmin, token, w
   const handleToggle = (id) => { const updated = tasks.map(t => t.id === id ? { ...t, done: !t.done } : t); setTasks(updated); saveTasks(updated); };
   const handleEdit = (id, text) => { const updated = tasks.map(t => t.id === id ? { ...t, text } : t); setTasks(updated); saveTasks(updated); };
   const handleDelete = (id) => { const updated = tasks.filter(t => t.id !== id); setTasks(updated); saveTasks(updated); };
+  const handleDeadline = (id, deadline) => { const updated = tasks.map(t => t.id === id ? { ...t, deadline } : t); setTasks(updated); saveTasks(updated); };
+
+  // Reassign an existing task to another member (allowed for anyone — service-key endpoint moves it).
+  const handleAssign = async (taskId, toUserId) => {
+    if (toUserId === member.user_id) return;
+    setTasks(tasks.filter(t => t.id !== taskId)); // optimistic: it leaves this card
+    setSaving(true);
+    try {
+      const r = await fetch("/api/assign", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, taskId, fromUserId: member.user_id, toUserId, weekOf }),
+      });
+      if (!r.ok) console.error("Assign failed:", await r.text());
+    } catch (err) { console.error("Assign error:", err); }
+    setSaving(false);
+    onEntryUpdated();
+  };
 
   const resolveBlocker = async (index) => {
     const updated = blockers.map((b, i) => i === index ? (typeof b === "object" ? { ...b, resolved: true } : { text: b, resolved: true }) : (typeof b === "object" ? b : { text: b, resolved: false }));
@@ -341,10 +445,29 @@ function MemberCard({ member, entry, lastEntry, isCurrentUser, isAdmin, token, w
     onEntryUpdated();
   };
 
-  const handleAddTask = () => {
+  const handleAddTask = async () => {
     if (!newTask.trim()) return;
-    const updated = [...tasks, { id: `m${Date.now()}`, text: newTask.trim(), done: false }];
-    setTasks(updated); saveTasks(updated); setNewTask(""); setAddingTask(false);
+    const text = newTask.trim();
+    const deadline = endOfWeek(weekOf);
+    const id = `m${Date.now()}`;
+    setNewTask(""); setAddingTask(false);
+    if (newTaskAssignee && newTaskAssignee !== member.user_id) {
+      // Create directly on a teammate's card via the service-key endpoint.
+      setSaving(true);
+      try {
+        const r = await fetch("/api/assign", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, toUserId: newTaskAssignee, weekOf, newTask: { id, text, done: false, deadline } }),
+        });
+        if (!r.ok) console.error("Assign failed:", await r.text());
+      } catch (err) { console.error("Assign error:", err); }
+      setSaving(false);
+      setNewTaskAssignee(member.user_id);
+      onEntryUpdated();
+    } else {
+      const updated = [...tasks, { id, text, done: false, deadline }];
+      setTasks(updated); saveTasks(updated);
+    }
   };
 
   if (isHero) {
@@ -377,8 +500,8 @@ function MemberCard({ member, entry, lastEntry, isCurrentUser, isAdmin, token, w
             )}
             {tasks.length > 0 && (<div style={{ marginBottom: 14 }}><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}><span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.38)", letterSpacing: "0.1em", textTransform: "uppercase" }}>This week</span><span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, color: "rgba(255,255,255,0.38)", fontWeight: 600 }}>{done}/{tasks.length}</span></div><div style={{ height: 3, background: "rgba(255,255,255,0.18)", borderRadius: 2 }}><div style={{ height: 3, borderRadius: 2, background: "#fff", width: `${tasks.length?(done/tasks.length)*100:0}%`, transition: "width 0.4s" }}/></div></div>)}
             <div style={{ flex: 1 }}>
-              {tasks.map(t => (<HeroTaskRow key={t.id} task={t} onToggle={handleToggle} onEdit={handleEdit} onDelete={handleDelete} isCurrentUser={isCurrentUser}/>))}
-              {isCurrentUser && (addingTask ? (<div style={{ display: "flex", gap: 6, marginTop: 8 }}><input autoFocus value={newTask} onChange={e => setNewTask(e.target.value)} onKeyDown={e => { if(e.key==="Enter") handleAddTask(); if(e.key==="Escape") setAddingTask(false); }} placeholder="Add a task..." style={{ flex: 1, background: "rgba(255,255,255,0.15)", border: "1.5px solid rgba(255,255,255,0.3)", borderRadius: 6, padding: "5px 10px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: "#fff", outline: "none" }}/><button onClick={handleAddTask} style={{ background: "rgba(255,255,255,0.2)", border: "none", borderRadius: 6, padding: "5px 10px", color: "#fff", cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontWeight: 600, fontSize: 12 }}>Add</button></div>) : (<button onClick={() => setAddingTask(true)} style={{ background: "none", border: "none", cursor: "pointer", padding: "6px 0", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, color: "rgba(255,255,255,0.4)", display: "flex", alignItems: "center", gap: 4, marginTop: 4 }}>+ add task</button>))}
+              {tasks.map(t => (<HeroTaskRow key={t.id} task={t} onToggle={handleToggle} onEdit={handleEdit} onDelete={handleDelete} onDeadline={handleDeadline} isCurrentUser={isCurrentUser} weekOf={weekOf} profiles={profiles} ownerId={member.user_id} onAssign={handleAssign}/>))}
+              {isCurrentUser && (addingTask ? (<div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}><input autoFocus value={newTask} onChange={e => setNewTask(e.target.value)} onKeyDown={e => { if(e.key==="Enter") handleAddTask(); if(e.key==="Escape") setAddingTask(false); }} placeholder="Add a task..." style={{ flex: 1, minWidth: 120, background: "rgba(255,255,255,0.15)", border: "1.5px solid rgba(255,255,255,0.3)", borderRadius: 6, padding: "5px 10px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: "#fff", outline: "none" }}/>{profiles && profiles.length > 1 && (<select value={newTaskAssignee} onChange={e => setNewTaskAssignee(e.target.value)} title="Assign to…" style={{ background: "rgba(255,255,255,0.15)", border: "1.5px solid rgba(255,255,255,0.3)", borderRadius: 6, padding: "5px 8px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, color: "#fff", outline: "none" }}>{profiles.map(p => <option key={p.user_id} value={p.user_id} style={{ color: "#000" }}>{p.user_id === member.user_id ? "Me" : (p.name?.split(" ")[0] || "?")}</option>)}</select>)}<button onClick={handleAddTask} style={{ background: "rgba(255,255,255,0.2)", border: "none", borderRadius: 6, padding: "5px 10px", color: "#fff", cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontWeight: 600, fontSize: 12 }}>Add</button></div>) : (<button onClick={() => setAddingTask(true)} style={{ background: "none", border: "none", cursor: "pointer", padding: "6px 0", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, color: "rgba(255,255,255,0.4)", display: "flex", alignItems: "center", gap: 4, marginTop: 4 }}>+ add task</button>))}
             </div>
             <div style={{ marginTop: 12, paddingTop: 10, borderTop: "0.5px solid rgba(255,255,255,0.12)" }}>
               <LastWeek completedLast={completedLast} doneTasks={lastDoneTasks} onLight={false}/>
@@ -405,7 +528,7 @@ function MemberCard({ member, entry, lastEntry, isCurrentUser, isAdmin, token, w
           <ProgressBar tasks={tasks}/>
           {note && <p style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: C.gray600, fontStyle: "italic", lineHeight: 1.55, margin: "12px 0" }}>"{note}"</p>}
           {isBlocked && (<div style={{ marginBottom: 12 }}><div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 700, color: `${C.pink}80`, letterSpacing: "0.09em", textTransform: "uppercase", marginBottom: 6 }}>Blockers</div>{blockers.map((b,i) => { const text = typeof b === "object" ? b.text : b; const resolved = typeof b === "object" ? b.resolved : false; return (<div key={i} style={{ display: "flex", gap: 8, alignItems: "center", background: resolved ? C.gray50 : "#FFF0F3", border: `1px solid ${resolved ? C.gray200 : "#FFB3C0"}`, borderRadius: 10, padding: "9px 12px", marginBottom: 6, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12.5, color: resolved ? C.gray400 : C.error, lineHeight: 1.45, transition: "all 0.2s" }}><span style={{ flexShrink: 0 }}>{resolved ? "✓" : "⚠"}</span><span style={{ flex: 1, textDecoration: resolved ? "line-through" : "none" }}>{text}</span>{canEdit && !resolved && <button onClick={(e) => { e.stopPropagation(); resolveBlocker(i); }} style={{ background: "#fff", border: `1.5px solid ${C.error}`, borderRadius: 6, padding: "6px 12px", color: C.error, cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0, position: "relative", zIndex: 10, minWidth: 80, textAlign: "center" }}>✓ Resolve</button>}{resolved && <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, color: C.gray400, fontWeight: 600, whiteSpace: "nowrap" }}>Resolved</span>}</div>); })}</div>)}
-          {tasks.length > 0 && (<><div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 700, color: C.gray400, letterSpacing: "0.09em", textTransform: "uppercase", marginBottom: 6, marginTop: 4 }}>This week · {done}/{tasks.length}</div><div style={{ flex: 1 }}>{isCurrentUser ? tasks.map(t => <TaskRow key={t.id} task={t} onToggle={handleToggle} onEdit={handleEdit} onDelete={handleDelete}/>) : tasks.map(t => { const cs = carryStyle(t); return (<div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: cs ? "5px 8px 5px 6px" : "5px 0", opacity: t.done ? 0.35 : 1, background: cs && !t.done ? cs.bg : "transparent", borderRadius: cs ? 8 : 0, borderLeft: cs && !t.done ? `3px solid ${cs.border}` : "none", marginBottom: cs ? 2 : 0 }}><DSCheckbox checked={t.done} onChange={() => {}}/><span style={{ flex: 1, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: C.gray800, textDecoration: t.done ? "line-through" : "none" }}>{t.text}</span>{cs && !t.done && <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 9, fontWeight: 700, color: cs.labelColor, whiteSpace: "nowrap", letterSpacing: "0.03em" }}>{cs.label}</span>}</div>); })}{isCurrentUser && (addingTask ? (<div style={{ display: "flex", gap: 6, marginTop: 8 }}><input autoFocus value={newTask} onChange={e => setNewTask(e.target.value)} onKeyDown={e => { if(e.key==="Enter") handleAddTask(); if(e.key==="Escape") setAddingTask(false); }} placeholder="Add a task..." style={{ flex: 1, border: `1.5px solid ${C.blue}`, borderRadius: 6, padding: "5px 10px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: C.gray800, outline: "none", boxShadow: `0 0 0 3px rgba(28,43,222,0.10)` }}/><BtnPrimary onClick={handleAddTask} style={{ padding: "5px 12px", fontSize: 12 }}>Add</BtnPrimary></div>) : (<button onClick={() => setAddingTask(true)} style={{ background: "none", border: "none", cursor: "pointer", padding: "5px 0", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, color: C.gray400, display: "flex", alignItems: "center", gap: 3, marginTop: 4 }}>+ add task</button>))}</div></>)}
+          {tasks.length > 0 && (<><div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 700, color: C.gray400, letterSpacing: "0.09em", textTransform: "uppercase", marginBottom: 6, marginTop: 4 }}>This week · {done}/{tasks.length}</div><div style={{ flex: 1 }}>{isCurrentUser ? tasks.map(t => <TaskRow key={t.id} task={t} onToggle={handleToggle} onEdit={handleEdit} onDelete={handleDelete} onDeadline={handleDeadline} weekOf={weekOf} profiles={profiles} ownerId={member.user_id} onAssign={handleAssign}/>) : tasks.map(t => <ReadOnlyTaskRow key={t.id} task={t} weekOf={weekOf} profiles={profiles} ownerId={member.user_id} onAssign={handleAssign}/>)}{isCurrentUser && (addingTask ? (<div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}><input autoFocus value={newTask} onChange={e => setNewTask(e.target.value)} onKeyDown={e => { if(e.key==="Enter") handleAddTask(); if(e.key==="Escape") setAddingTask(false); }} placeholder="Add a task..." style={{ flex: 1, minWidth: 120, border: `1.5px solid ${C.blue}`, borderRadius: 6, padding: "5px 10px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: C.gray800, outline: "none", boxShadow: `0 0 0 3px rgba(28,43,222,0.10)` }}/>{profiles && profiles.length > 1 && (<select value={newTaskAssignee} onChange={e => setNewTaskAssignee(e.target.value)} title="Assign to…" style={{ background: C.gray50, border: `1.5px solid ${C.gray200}`, borderRadius: 6, padding: "5px 8px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, color: C.gray600, outline: "none" }}>{profiles.map(p => <option key={p.user_id} value={p.user_id}>{p.user_id === member.user_id ? "Me" : (p.name?.split(" ")[0] || "?")}</option>)}</select>)}<BtnPrimary onClick={handleAddTask} style={{ padding: "5px 12px", fontSize: 12 }}>Add</BtnPrimary></div>) : (<button onClick={() => setAddingTask(true)} style={{ background: "none", border: "none", cursor: "pointer", padding: "5px 0", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, color: C.gray400, display: "flex", alignItems: "center", gap: 3, marginTop: 4 }}>+ add task</button>))}</div></>)}
           <LastWeek completedLast={completedLast} doneTasks={lastDoneTasks}/>
         </>
       )}
@@ -665,20 +788,20 @@ function DashboardScreen({ user, profile, token, onSignOut, onAdmin, isAdmin }) 
         ) : mobile ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}><StatTile label="Submitted" value={`${submitted}/${profiles.length}`} accent={C.blue}/><StatTile label="Blockers" value={blocked} accent={blocked>0?C.pink:C.gray800} sub={blocked>0?"Needs attention":"All clear"}/></div>
-            {sortedProfiles.map((p,i) => <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={!isHistoryView && p.user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} mobile span={getSpan(p)}/>)}
+            {sortedProfiles.map((p,i) => <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={!isHistoryView && p.user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} allProfiles={isHistoryView ? null : profiles} mobile span={getSpan(p)}/>)}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>{!isHistoryView && <WaTile/>}<StatTile label="Done" value={`${doneTasks}/${allTasks.length}`} accent={C.blue}/><CompletionTile profiles={profiles} entries={entries}/></div>
           </div>
         ) : (
           <>
             <div style={{ display: "flex", gap: 14, alignItems: "flex-start", marginBottom: 20 }}>
               <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-                <MemberCard member={sortedProfiles[0]} entry={getEntry(sortedProfiles[0].user_id)} lastEntry={getLastEntry(sortedProfiles[0].user_id)} isCurrentUser={!isHistoryView && sortedProfiles[0].user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} mobile={false} span={getSpan(sortedProfiles[0])}/>
+                <MemberCard member={sortedProfiles[0]} entry={getEntry(sortedProfiles[0].user_id)} lastEntry={getLastEntry(sortedProfiles[0].user_id)} isCurrentUser={!isHistoryView && sortedProfiles[0].user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} allProfiles={isHistoryView ? null : profiles} mobile={false} span={getSpan(sortedProfiles[0])}/>
               </div>
               <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 14 }}>
-                {otherProfiles.slice(0, colMid).map((p) => <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={!isHistoryView && p.user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} mobile={false} span={getSpan(p)}/>)}
+                {otherProfiles.slice(0, colMid).map((p) => <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={!isHistoryView && p.user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} allProfiles={isHistoryView ? null : profiles} mobile={false} span={getSpan(p)}/>)}
               </div>
               <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 14 }}>
-                {otherProfiles.slice(colMid).map((p) => <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={!isHistoryView && p.user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} mobile={false} span={getSpan(p)}/>)}
+                {otherProfiles.slice(colMid).map((p) => <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={!isHistoryView && p.user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} allProfiles={isHistoryView ? null : profiles} mobile={false} span={getSpan(p)}/>)}
               </div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, alignItems: "start" }}>

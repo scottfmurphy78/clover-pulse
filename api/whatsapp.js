@@ -71,13 +71,14 @@ async function transcribeAudio(audioBuffer) {
   return data.text;
 }
 
-async function parseWithClaude(transcript, existingEntry) {
+async function parseWithClaude(transcript, existingEntry, roster = [], speakerName = "") {
+  const names = roster.map(p => (p.name || "").split(" ")[0]).filter(Boolean).join(", ");
   const system = `You are an assistant that extracts weekly work updates from voice note transcripts.
 Return ONLY valid JSON with this exact structure, no preamble, no markdown:
 {
   "note": "A single punchy sentence summarising the person's week in their own voice. Max 15 words.",
   "tasks": [
-    { "id": "unique_short_id", "text": "Task description", "done": false }
+    { "id": "unique_short_id", "text": "Task description", "done": false, "assignee": null, "deadline": null }
   ],
   "completed_last": [
     "Thing they completed last week"
@@ -94,7 +95,10 @@ Rules:
 - If they mention something is done, set done: true
 - Generate short unique IDs like t1, t2, t3
 - If no blockers, return empty array
-- If no completed last week mentioned, return empty array`;
+- If no completed last week mentioned, return empty array
+- The speaker is ${speakerName || "the sender"}. Team members: ${names || "none"}.
+- assignee: if the speaker assigns a task to a teammate by name (e.g. "assign Antonio to fix the website"), set assignee to that teammate's first name exactly as listed above. For the speaker's own tasks, set assignee to null.
+- deadline: an ISO date "YYYY-MM-DD" ONLY if a specific due date or weekday is stated; otherwise null`;
 
   const userPrompt = existingEntry
     ? `Here is their existing entry this week:\n${JSON.stringify(existingEntry)}\n\nHere is their new voice note transcript. Merge new information with existing, update done status where mentioned:\n\n${transcript}`
@@ -133,6 +137,58 @@ async function savePulseEntry(userId, weekOf, parsed) {
       submitted_at: new Date().toISOString(),
     }),
   });
+}
+
+// week_of is the Monday; "end of week" = that Sunday.
+function endOfWeek(weekOf) {
+  const d = new Date(weekOf + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + 6);
+  return d.toISOString().split("T")[0];
+}
+
+// Append a task to a teammate's weekly entry, creating the entry if needed.
+async function addAssignedTask(userId, weekOf, task) {
+  const rows = await sbFetch(`pulse_entries?user_id=eq.${userId}&week_of=eq.${weekOf}&select=*`);
+  const entry = Array.isArray(rows) ? rows[0] : null;
+  if (entry) {
+    const existing = entry.tasks || [];
+    if (existing.some(t => t.id === task.id)) return;
+    return sbFetch(`pulse_entries?user_id=eq.${userId}&week_of=eq.${weekOf}`, {
+      method: "PATCH", body: JSON.stringify({ tasks: [...existing, task] }),
+    });
+  }
+  return sbFetch("pulse_entries", {
+    method: "POST",
+    body: JSON.stringify({ user_id: userId, week_of: weekOf, note: null, tasks: [task], completed_last: [], blockers: [], submitted_at: null }),
+  });
+}
+
+// Split parsed tasks into the speaker's own vs ones assigned to teammates.
+// Matches assignee on first name; unknown/ambiguous names stay with the speaker.
+function distributeTasks(tasks, roster, speaker, weekOf) {
+  const byFirst = {};
+  for (const p of roster) {
+    const fn = (p.name || "").split(" ")[0].toLowerCase();
+    if (fn) (byFirst[fn] = byFirst[fn] || []).push(p);
+  }
+  const speakerFirst = (speaker.name || "").split(" ")[0].toLowerCase();
+  const ownTasks = [], assigned = [], unmatched = [];
+  tasks.forEach((t, i) => {
+    const task = { ...t };
+    const who = (task.assignee || "").trim().toLowerCase();
+    delete task.assignee;
+    if (!task.deadline) task.deadline = endOfWeek(weekOf);
+    const matches = byFirst[who];
+    if (!who || who === speakerFirst) {
+      ownTasks.push(task);
+    } else if (matches && matches.length === 1 && matches[0].user_id !== speaker.user_id) {
+      assigned.push({ target: matches[0], task: { ...task, id: `a${Date.now()}_${i}`, done: false, assigned_by: speaker.user_id } });
+    } else {
+      unmatched.push(t.assignee);
+      ownTasks.push(task);
+    }
+  });
+  return { ownTasks, assigned, unmatched };
 }
 
 function twimlResponse(message) {
@@ -178,21 +234,32 @@ export default async function handler(req, res) {
       return res.status(200).send(twimlResponse("I couldn't make out your message. Try again!"));
     }
 
+    const firstName = profile.name?.split(" ")[0] || "there";
     const weekOf = currentWeekOf();
     const existing = await sbFetch(`pulse_entries?user_id=eq.${profile.user_id}&week_of=eq.${weekOf}&select=*`);
     const existingEntry = Array.isArray(existing) ? existing[0] : null;
 
-    const parsed = await parseWithClaude(transcript, existingEntry);
-    await savePulseEntry(profile.user_id, weekOf, parsed);
+    const rosterRaw = await sbFetch("profiles?select=user_id,name");
+    const roster = Array.isArray(rosterRaw) ? rosterRaw : [];
 
-    const firstName = profile.name?.split(" ")[0] || "there";
-    const taskCount = parsed.tasks?.length || 0;
+    const parsed = await parseWithClaude(transcript, existingEntry, roster, firstName);
+
+    const { ownTasks, assigned, unmatched } = distributeTasks(parsed.tasks || [], roster, profile, weekOf);
+    parsed.tasks = ownTasks;
+
+    await savePulseEntry(profile.user_id, weekOf, parsed);
+    for (const { target, task } of assigned) await addAssignedTask(target.user_id, weekOf, task);
+
+    const taskCount = ownTasks.length;
     const blockerCount = parsed.blockers?.length || 0;
     const blockerNote = blockerCount > 0 ? ` I've flagged ${blockerCount} blocker${blockerCount > 1 ? "s" : ""}.` : "";
+    const assignNames = [...new Set(assigned.map(a => (a.target.name || "").split(" ")[0]))];
+    const assignNote = assigned.length > 0 ? ` Assigned ${assigned.length} to ${assignNames.join(", ")}.` : "";
+    const unmatchedNote = unmatched.length ? ` Couldn't find ${[...new Set(unmatched)].join(", ")} — kept as yours.` : "";
 
     res.setHeader("Content-Type", "text/xml");
     return res.status(200).send(twimlResponse(
-      `Got it ${firstName}. ${taskCount} task${taskCount !== 1 ? "s" : ""} logged for the week.${blockerNote} Dashboard updated at clover-pulse.vercel.app`
+      `Got it ${firstName}. ${taskCount} task${taskCount !== 1 ? "s" : ""} logged for the week.${assignNote}${blockerNote}${unmatchedNote} Dashboard updated at clover-pulse.vercel.app`
     ));
 
   } catch (err) {
