@@ -8,6 +8,33 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
+
+// ── Slack: notify an assignee (even when the update came in over WhatsApp) ──
+async function slackPost(method, body) {
+  if (!SLACK_BOT_TOKEN) return { ok: false };
+  const r = await fetch(`https://slack.com/api/${method}`, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${SLACK_BOT_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await r.json().catch(() => ({ ok: false }));
+  if (!data.ok) console.error("Slack error:", method, data.error);
+  return data;
+}
+async function sendSlackDM(slackUserId, text) {
+  const open = await slackPost("conversations.open", { users: slackUserId });
+  if (!open.ok) return;
+  return slackPost("chat.postMessage", { channel: open.channel.id, text });
+}
+function assignmentMessage(assignerName, tasks) {
+  const list = tasks.map(t => {
+    const due = t.deadline ? new Date(t.deadline + "T00:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }) : null;
+    return `• ${t.text}${due ? `  _(due ${due})_` : ""}`;
+  }).join("\n");
+  const n = tasks.length;
+  return `📋 *${assignerName || "Someone"}* assigned you ${n} task${n !== 1 ? "s" : ""} on Clover Pulse:\n${list}\n\nhttps://pulse.clover.tools`;
+}
 
 async function sbFetch(path, options = {}) {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -239,7 +266,7 @@ export default async function handler(req, res) {
     const existing = await sbFetch(`pulse_entries?user_id=eq.${profile.user_id}&week_of=eq.${weekOf}&select=*`);
     const existingEntry = Array.isArray(existing) ? existing[0] : null;
 
-    const rosterRaw = await sbFetch("profiles?select=user_id,name");
+    const rosterRaw = await sbFetch("profiles?select=user_id,name,slack_user_id");
     const roster = Array.isArray(rosterRaw) ? rosterRaw : [];
 
     const parsed = await parseWithClaude(transcript, existingEntry, roster, firstName);
@@ -248,7 +275,18 @@ export default async function handler(req, res) {
     parsed.tasks = ownTasks;
 
     await savePulseEntry(profile.user_id, weekOf, parsed);
-    for (const { target, task } of assigned) await addAssignedTask(target.user_id, weekOf, task);
+    const dmByTarget = new Map(); // slack_user_id → tasks[]
+    for (const { target, task } of assigned) {
+      await addAssignedTask(target.user_id, weekOf, task);
+      if (target.slack_user_id) {
+        if (!dmByTarget.has(target.slack_user_id)) dmByTarget.set(target.slack_user_id, []);
+        dmByTarget.get(target.slack_user_id).push(task);
+      }
+    }
+    for (const [slackId, tasksForUser] of dmByTarget) {
+      try { await sendSlackDM(slackId, assignmentMessage(profile.name, tasksForUser)); }
+      catch (e) { console.error("Assign DM failed:", e.message); }
+    }
 
     const taskCount = ownTasks.length;
     const blockerCount = parsed.blockers?.length || 0;

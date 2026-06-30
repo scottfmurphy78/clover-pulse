@@ -17,6 +17,7 @@
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 
 async function sbFetch(path, options = {}) {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -50,6 +51,37 @@ function endOfWeek(weekOf) {
   const d = new Date(weekOf + "T00:00:00Z");
   d.setUTCDate(d.getUTCDate() + 6);
   return d.toISOString().split("T")[0];
+}
+
+// ── Slack: DM the assignee that they have a new task ──────────────────
+async function slackPost(method, body) {
+  if (!SLACK_BOT_TOKEN) return { ok: false };
+  const r = await fetch(`https://slack.com/api/${method}`, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${SLACK_BOT_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await r.json().catch(() => ({ ok: false }));
+  if (!data.ok) console.error("Slack error:", method, data.error);
+  return data;
+}
+async function sendSlackDM(slackUserId, text) {
+  const open = await slackPost("conversations.open", { users: slackUserId });
+  if (!open.ok) return;
+  return slackPost("chat.postMessage", { channel: open.channel.id, text });
+}
+function assignmentMessage(assignerName, tasks) {
+  const list = tasks.map(t => {
+    const due = t.deadline ? new Date(t.deadline + "T00:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }) : null;
+    return `• ${t.text}${due ? `  _(due ${due})_` : ""}`;
+  }).join("\n");
+  const n = tasks.length;
+  return `📋 *${assignerName || "Someone"}* assigned you ${n} task${n !== 1 ? "s" : ""} on Clover Pulse:\n${list}\n\nhttps://pulse.clover.tools`;
+}
+async function notifyAssignee(target, assignerName, task) {
+  if (!target?.slack_user_id) return;
+  try { await sendSlackDM(target.slack_user_id, assignmentMessage(assignerName, [task])); }
+  catch (e) { console.error("Assign DM failed:", e.message); }
 }
 
 async function getEntry(userId, weekOf) {
@@ -92,8 +124,14 @@ export default async function handler(req, res) {
     if (!caller.email.endsWith("@rideclover.com")) return res.status(403).json({ error: "Forbidden" });
 
     // Target must be a real team member.
-    const targetRows = await sbFetch(`profiles?user_id=eq.${toUserId}&select=user_id`);
-    if (!Array.isArray(targetRows) || !targetRows[0]) return res.status(404).json({ error: "Unknown assignee" });
+    const targetRows = await sbFetch(`profiles?user_id=eq.${toUserId}&select=user_id,name,slack_user_id`);
+    const target = Array.isArray(targetRows) ? targetRows[0] : null;
+    if (!target) return res.status(404).json({ error: "Unknown assignee" });
+
+    // The assigner's display name, for the notification.
+    const callerRows = await sbFetch(`profiles?user_id=eq.${caller.user_id}&select=name`);
+    const assignerName = (Array.isArray(callerRows) ? callerRows[0]?.name : null) || caller.email.split("@")[0];
+    const notifyTarget = target.user_id !== caller.user_id; // never DM yourself
 
     // ── Create-and-assign ──────────────────────────────────────────────
     if (newTask && !taskId) {
@@ -106,6 +144,7 @@ export default async function handler(req, res) {
       };
       if (!task.text) return res.status(400).json({ error: "Empty task" });
       await addTaskToEntry(toUserId, weekOf, task);
+      if (notifyTarget) await notifyAssignee(target, assignerName, task);
       return res.status(200).json({ ok: true, action: "created" });
     }
 
@@ -130,6 +169,7 @@ export default async function handler(req, res) {
       assigned_by: caller.user_id,
     };
     await addTaskToEntry(toUserId, weekOf, moved);
+    if (notifyTarget) await notifyAssignee(target, assignerName, moved);
 
     return res.status(200).json({ ok: true, action: "moved" });
   } catch (err) {

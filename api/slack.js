@@ -58,6 +58,22 @@ async function postToChannel(channelId, text) {
   return slackPost("chat.postMessage", { channel: channelId, text });
 }
 
+async function sendDM(slackUserId, text) {
+  const open = await slackPost("conversations.open", { users: slackUserId });
+  if (!open.ok) { console.error("Failed to open DM:", open.error); return; }
+  return slackPost("chat.postMessage", { channel: open.channel.id, text });
+}
+
+// One DM summarising the new task(s) someone was just assigned.
+function assignmentMessage(assignerName, tasks) {
+  const list = tasks.map(t => {
+    const due = t.deadline ? new Date(t.deadline + "T00:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }) : null;
+    return `• ${t.text}${due ? `  _(due ${due})_` : ""}`;
+  }).join("\n");
+  const n = tasks.length;
+  return `📋 *${assignerName || "Someone"}* assigned you ${n} task${n !== 1 ? "s" : ""} on Clover Pulse:\n${list}\n\nhttps://pulse.clover.tools`;
+}
+
 async function getSlackUserEmail(slackUserId) {
   const r = await fetch(`https://slack.com/api/users.info?user=${slackUserId}`, {
     headers: { "Authorization": `Bearer ${SLACK_BOT_TOKEN}` },
@@ -318,7 +334,7 @@ export default async function handler(req, res) {
     const existingEntry = Array.isArray(existingRaw) ? existingRaw[0] : null;
     console.log("Existing entry:", existingEntry ? "yes" : "no");
 
-    const rosterRaw = await sbFetch("profiles?select=user_id,name");
+    const rosterRaw = await sbFetch("profiles?select=user_id,name,slack_user_id");
     const roster = Array.isArray(rosterRaw) ? rosterRaw : [];
 
     const parsed = await parseWithClaude(transcript, existingEntry, roster, firstName);
@@ -330,9 +346,18 @@ export default async function handler(req, res) {
     const saved = await savePulseEntry(profile.user_id, weekOf, parsed, existingEntry);
     console.log("Saved:", JSON.stringify(saved)?.substring(0, 150));
 
+    const dmByTarget = new Map(); // slack_user_id → { name, tasks: [] }
     for (const { target, task } of assigned) {
       await addAssignedTask(target.user_id, weekOf, task);
       console.log(`Assigned task to ${target.name}`);
+      if (target.slack_user_id) {
+        if (!dmByTarget.has(target.slack_user_id)) dmByTarget.set(target.slack_user_id, []);
+        dmByTarget.get(target.slack_user_id).push(task);
+      }
+    }
+    for (const [slackId, tasksForUser] of dmByTarget) {
+      try { await sendDM(slackId, assignmentMessage(profile.name, tasksForUser)); }
+      catch (e) { console.error("Assign DM failed:", e.message); }
     }
 
     if (parsed.blockers?.length) await notifyAdminsOfBlockers(profile, parsed.blockers);
