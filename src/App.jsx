@@ -305,7 +305,7 @@ function TaskRow({ task, onToggle, onEdit, onDelete, onDeadline, weekOf, profile
       {editing ? (
         <input autoFocus value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }} style={{ flex: 1, border: `1.5px solid ${C.blue}`, borderRadius: 6, padding: "3px 8px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: C.gray800, outline: "none", boxShadow: `0 0 0 3px rgba(28,43,222,0.10)` }}/>
       ) : (
-        <span onClick={() => setEditing(true)} style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: C.gray800, lineHeight: 1.45, cursor: "text", textDecoration: task.done ? "line-through" : "none" }}>{task.text}</span>
+        <span onClick={() => setEditing(true)} style={{ flex: 1, minWidth: 0, overflowWrap: "break-word", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: C.gray800, lineHeight: 1.45, cursor: "text", textDecoration: task.done ? "line-through" : "none" }}>{task.text}</span>
       )}
       {assignerLabel(task, ownerId, profiles)}
       {cs && !task.done && <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 9, fontWeight: 700, color: cs.labelColor, whiteSpace: "nowrap", letterSpacing: "0.03em" }}>{cs.label}</span>}
@@ -324,7 +324,7 @@ function ReadOnlyTaskRow({ task, weekOf, profiles, ownerId, onAssign }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: cs ? "5px 8px 5px 6px" : "5px 0", opacity: task.done ? 0.35 : 1, background: cs && !task.done ? cs.bg : "transparent", borderRadius: cs ? 8 : 0, borderLeft: cs && !task.done ? `3px solid ${cs.border}` : "none", marginBottom: cs ? 2 : 0 }}>
       <DSCheckbox checked={task.done} onChange={() => {}}/>
-      <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: C.gray800, textDecoration: task.done ? "line-through" : "none" }}>{task.text}</span>
+      <span style={{ flex: 1, minWidth: 0, overflowWrap: "break-word", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: C.gray800, textDecoration: task.done ? "line-through" : "none" }}>{task.text}</span>
       {assignerLabel(task, ownerId, profiles)}
       {cs && !task.done && <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 9, fontWeight: 700, color: cs.labelColor, whiteSpace: "nowrap", letterSpacing: "0.03em" }}>{cs.label}</span>}
       <DeadlineChip iso={iso} overdue={overdue} canEdit={false} onLight/>
@@ -375,7 +375,7 @@ function HeroTaskRow({ task, onToggle, onEdit, onDelete, onDeadline, isCurrentUs
       {editing && isCurrentUser ? (
         <input autoFocus value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }} style={{ flex: 1, background: "rgba(255,255,255,0.15)", border: "1.5px solid rgba(255,255,255,0.5)", borderRadius: 6, padding: "3px 8px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: "#fff", outline: "none" }}/>
       ) : (
-        <span onClick={() => isCurrentUser && setEditing(true)} style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: "#fff", lineHeight: 1.45, cursor: isCurrentUser ? "text" : "default", textDecoration: task.done ? "line-through" : "none", opacity: task.done ? 0.5 : 1 }}>{task.text}</span>
+        <span onClick={() => isCurrentUser && setEditing(true)} style={{ flex: 1, minWidth: 0, overflowWrap: "break-word", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: "#fff", lineHeight: 1.45, cursor: isCurrentUser ? "text" : "default", textDecoration: task.done ? "line-through" : "none", opacity: task.done ? 0.5 : 1 }}>{task.text}</span>
       )}
       {assignerLabel(task, ownerId, profiles, true)}
       {cs && !task.done && <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 9, fontWeight: 700, color: cs.labelColor, whiteSpace: "nowrap", letterSpacing: "0.03em" }}>{cs.label}</span>}
@@ -780,7 +780,7 @@ function DashboardScreen({ user, profile, token, onSignOut, onAdmin, isAdmin }) 
           <ProfileMenu user={user} profile={profile} onSignOut={onSignOut} isAdmin={isAdmin} onAdmin={onAdmin}/>
         </div>
       </header>
-      <main style={{ maxWidth: 1100, margin: "0 auto", padding: mobile?"16px 14px 60px":"32px 28px 80px" }}>
+      <main style={{ maxWidth: 1600, margin: "0 auto", padding: mobile?"16px 14px 60px":"32px 28px 80px" }}>
         {mobile && allWeeks.length > 1 && (<div style={{ display: "flex", justifyContent: "center", marginBottom: 14, background: C.darkest, borderRadius: 12, padding: "8px 16px" }}><WeekNav currentWeek={selectedWeek} allWeeks={allWeeks} onChange={handleWeekChange}/></div>)}
         {isHistoryView && (<div style={{ background: C.lavender, borderRadius: 12, padding: "10px 16px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between" }}><span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: C.blue, fontWeight: 500 }}>📅 Viewing {formatWeekLabel(selectedWeek)} — read only</span><button onClick={() => handleWeekChange(thisWeek)} style={{ background: C.blue, border: "none", borderRadius: 8, padding: "5px 12px", color: "#fff", cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 12, fontWeight: 600 }}>Back to this week</button></div>)}
         {profiles.length === 0 ? (
