@@ -305,7 +305,7 @@ function TaskRow({ task, onToggle, onEdit, onDelete, onDeadline, weekOf, profile
       {editing ? (
         <input autoFocus value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }} style={{ flex: 1, border: `1.5px solid ${C.blue}`, borderRadius: 6, padding: "3px 8px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: C.gray800, outline: "none", boxShadow: `0 0 0 3px rgba(28,43,222,0.10)` }}/>
       ) : (
-        <span onClick={() => setEditing(true)} style={{ flex: 1, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: C.gray800, lineHeight: 1.45, cursor: "text", textDecoration: task.done ? "line-through" : "none" }}>{task.text}</span>
+        <span onClick={() => setEditing(true)} style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: C.gray800, lineHeight: 1.45, cursor: "text", textDecoration: task.done ? "line-through" : "none" }}>{task.text}</span>
       )}
       {assignerLabel(task, ownerId, profiles)}
       {cs && !task.done && <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 9, fontWeight: 700, color: cs.labelColor, whiteSpace: "nowrap", letterSpacing: "0.03em" }}>{cs.label}</span>}
@@ -324,7 +324,7 @@ function ReadOnlyTaskRow({ task, weekOf, profiles, ownerId, onAssign }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: cs ? "5px 8px 5px 6px" : "5px 0", opacity: task.done ? 0.35 : 1, background: cs && !task.done ? cs.bg : "transparent", borderRadius: cs ? 8 : 0, borderLeft: cs && !task.done ? `3px solid ${cs.border}` : "none", marginBottom: cs ? 2 : 0 }}>
       <DSCheckbox checked={task.done} onChange={() => {}}/>
-      <span style={{ flex: 1, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: C.gray800, textDecoration: task.done ? "line-through" : "none" }}>{task.text}</span>
+      <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: C.gray800, textDecoration: task.done ? "line-through" : "none" }}>{task.text}</span>
       {assignerLabel(task, ownerId, profiles)}
       {cs && !task.done && <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 9, fontWeight: 700, color: cs.labelColor, whiteSpace: "nowrap", letterSpacing: "0.03em" }}>{cs.label}</span>}
       <DeadlineChip iso={iso} overdue={overdue} canEdit={false} onLight/>
@@ -375,7 +375,7 @@ function HeroTaskRow({ task, onToggle, onEdit, onDelete, onDeadline, isCurrentUs
       {editing && isCurrentUser ? (
         <input autoFocus value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }} style={{ flex: 1, background: "rgba(255,255,255,0.15)", border: "1.5px solid rgba(255,255,255,0.5)", borderRadius: 6, padding: "3px 8px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: "#fff", outline: "none" }}/>
       ) : (
-        <span onClick={() => isCurrentUser && setEditing(true)} style={{ flex: 1, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: "#fff", lineHeight: 1.45, cursor: isCurrentUser ? "text" : "default", textDecoration: task.done ? "line-through" : "none", opacity: task.done ? 0.5 : 1 }}>{task.text}</span>
+        <span onClick={() => isCurrentUser && setEditing(true)} style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: "#fff", lineHeight: 1.45, cursor: isCurrentUser ? "text" : "default", textDecoration: task.done ? "line-through" : "none", opacity: task.done ? 0.5 : 1 }}>{task.text}</span>
       )}
       {assignerLabel(task, ownerId, profiles, true)}
       {cs && !task.done && <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 9, fontWeight: 700, color: cs.labelColor, whiteSpace: "nowrap", letterSpacing: "0.03em" }}>{cs.label}</span>}
@@ -794,13 +794,13 @@ function DashboardScreen({ user, profile, token, onSignOut, onAdmin, isAdmin }) 
         ) : (
           <>
             <div style={{ display: "flex", gap: 14, alignItems: "flex-start", marginBottom: 20 }}>
-              <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+              <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
                 <MemberCard member={sortedProfiles[0]} entry={getEntry(sortedProfiles[0].user_id)} lastEntry={getLastEntry(sortedProfiles[0].user_id)} isCurrentUser={!isHistoryView && sortedProfiles[0].user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} allProfiles={isHistoryView ? null : profiles} mobile={false} span={getSpan(sortedProfiles[0])}/>
               </div>
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
                 {otherProfiles.slice(0, colMid).map((p) => <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={!isHistoryView && p.user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} allProfiles={isHistoryView ? null : profiles} mobile={false} span={getSpan(p)}/>)}
               </div>
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
                 {otherProfiles.slice(colMid).map((p) => <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={!isHistoryView && p.user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} allProfiles={isHistoryView ? null : profiles} mobile={false} span={getSpan(p)}/>)}
               </div>
             </div>
