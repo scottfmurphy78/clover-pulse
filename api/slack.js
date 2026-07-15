@@ -1,10 +1,11 @@
 // /api/slack.js — Clover Pulse Slack event handler
 
+import crypto from "crypto";
+
+// Raw body is required to verify Slack's request signature, so disable parsing.
 export const config = {
   api: {
-    bodyParser: {
-      sizeLimit: "1mb",
-    },
+    bodyParser: false,
   },
 };
 
@@ -14,6 +15,27 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET;
+
+// ── Request authenticity ──────────────────────────────────────────────
+// bodyParser is disabled (above) so we can hash the exact bytes Slack sent.
+async function readRawBody(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  return Buffer.concat(chunks);
+}
+
+// Slack signs each request: v0=HMAC_SHA256(signing_secret, `v0:${ts}:${rawBody}`).
+function verifySlackSignature(rawBody, timestamp, signature) {
+  if (!SLACK_SIGNING_SECRET || !timestamp || !signature) return false;
+  // Replay protection: reject anything older than 5 minutes.
+  const age = Math.abs(Math.floor(Date.now() / 1000) - Number(timestamp));
+  if (!Number.isFinite(age) || age > 60 * 5) return false;
+  const expected = "v0=" + crypto.createHmac("sha256", SLACK_SIGNING_SECRET)
+    .update(`v0:${timestamp}:${rawBody.toString("utf8")}`).digest("hex");
+  const a = Buffer.from(expected);
+  const b = Buffer.from(signature);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
 
 // Deduplication
 const processedEvents = new Set();
@@ -244,10 +266,18 @@ function currentWeekOf() {
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).send("Method not allowed");
 
+  let body = null;
   try {
-    console.log("SLACK IN:", typeof req.body, JSON.stringify(req.body)?.substring(0, 100));
+    const rawBody = await readRawBody(req);
+    const timestamp = req.headers["x-slack-request-timestamp"];
+    const signature = req.headers["x-slack-signature"];
+    if (!verifySlackSignature(rawBody, timestamp, signature)) {
+      console.error("Slack signature verification failed");
+      return res.status(401).send("invalid signature");
+    }
 
-    const body = req.body;
+    body = JSON.parse(rawBody.toString("utf8") || "{}");
+    console.log("SLACK IN:", typeof body, JSON.stringify(body)?.substring(0, 100));
     if (!body) { console.error("No body"); return res.status(200).send("ok"); }
 
     if (body.type === "url_verification") {
@@ -373,7 +403,7 @@ export default async function handler(req, res) {
 
   } catch (err) {
     console.error("ERROR:", err.message, err.stack?.substring(0, 300));
-    try { await postToChannel(req.body?.event?.channel, "Something went wrong. Try again in a moment."); } catch {}
+    try { await postToChannel(body?.event?.channel, "Something went wrong. Try again in a moment."); } catch {}
   }
 
   return res.status(200).send("ok");

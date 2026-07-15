@@ -71,6 +71,10 @@ function endOfWeek(weekOf) {
   return d.toISOString().split("T")[0];
 }
 
+// Blockers may be a plain string (legacy) or { text, resolved }. Normalize on read.
+function blockerText(b) { return b && typeof b === "object" ? b.text : b; }
+function blockerResolved(b) { return b && typeof b === "object" ? !!b.resolved : false; }
+
 // ── JOB 1: Carryover incomplete tasks from last week ──────────────────
 async function runCarryover() {
   console.log("Running carryover...");
@@ -215,11 +219,11 @@ async function runMondayDigest() {
   const teamSummary = submittedEntries.map(e => {
     const p = profileMap[e.user_id];
     const activeTasks = (e.tasks || []).filter(t => !t.done);
-    const activeBlockers = (e.blockers || []).filter(b => !(typeof b === "object" ? b.resolved : false));
+    const activeBlockers = (e.blockers || []).filter(b => !blockerResolved(b));
     return `${p?.name || "Unknown"} (${p?.role || ""}):
 Note: ${e.note || "None"}
 Tasks this week: ${activeTasks.map(t => t.text).join(", ") || "None"}
-Blockers: ${activeBlockers.map(b => typeof b === "object" ? b.text : b).join(", ") || "None"}`;
+Blockers: ${activeBlockers.map(blockerText).join(", ") || "None"}`;
   }).join("\n\n");
 
   const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -249,9 +253,9 @@ Blockers: ${activeBlockers.map(b => typeof b === "object" ? b.text : b).join(", 
   const blocks = submittedEntries.map(e => {
     const p = profileMap[e.user_id];
     const activeTasks = (e.tasks || []).filter(t => !t.done);
-    const activeBlockers = (e.blockers || []).filter(b => !(typeof b === "object" ? b.resolved : false));
-    const blockerText = activeBlockers.length ? `\n⚠️ ${activeBlockers.map(b => typeof b === "object" ? b.text : b).join(", ")}` : "";
-    return `*${p?.name?.split(" ")[0] || "?"}* — ${e.note || "No note"}${blockerText}\n${activeTasks.slice(0, 3).map(t => `› ${t.text}`).join("\n")}${activeTasks.length > 3 ? `\n› +${activeTasks.length - 3} more` : ""}`;
+    const activeBlockers = (e.blockers || []).filter(b => !blockerResolved(b));
+    const blockerSuffix = activeBlockers.length ? `\n⚠️ ${activeBlockers.map(blockerText).join(", ")}` : "";
+    return `*${p?.name?.split(" ")[0] || "?"}* — ${e.note || "No note"}${blockerSuffix}\n${activeTasks.slice(0, 3).map(t => `› ${t.text}`).join("\n")}${activeTasks.length > 3 ? `\n› +${activeTasks.length - 3} more` : ""}`;
   }).join("\n\n");
 
   await slackPost("chat.postMessage", {
@@ -264,8 +268,12 @@ Blockers: ${activeBlockers.map(b => typeof b === "object" ? b.text : b).join(", 
 
 // ── Main handler ──────────────────────────────────────────────────────
 export default async function handler(req, res) {
-  const secret = req.headers["x-cron-secret"] || req.query.secret;
-  if (secret !== CRON_SECRET) return res.status(401).json({ error: "Unauthorized" });
+  // Vercel auto-injects `Authorization: Bearer <CRON_SECRET>` on scheduled runs.
+  // Legacy header/query secret kept as a fallback for manual invocation.
+  const authHeader = req.headers["authorization"] || "";
+  const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  const secret = bearer || req.headers["x-cron-secret"] || req.query.secret;
+  if (!CRON_SECRET || secret !== CRON_SECRET) return res.status(401).json({ error: "Unauthorized" });
 
   const job = req.query.job;
   console.log(`Running cron job: ${job}`);

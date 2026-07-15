@@ -9,9 +9,9 @@
     }
   },
   "crons": [
-    { "path": "/api/cron?job=carryover&secret=clover2026pulse", "schedule": "0 6 * * 1" },
-    { "path": "/api/cron?job=sunday-reminder&secret=clover2026pulse", "schedule": "0 18 * * 0" },
-    { "path": "/api/cron?job=monday-reminder&secret=clover2026pulse", "schedule": "30 7 * * 1" },
-    { "path": "/api/cron?job=monday-digest&secret=clover2026pulse", "schedule": "15 8 * * 1" }
+    { "path": "/api/cron?job=carryover", "schedule": "0 6 * * 1" },
+    { "path": "/api/cron?job=sunday-reminder", "schedule": "0 18 * * 0" },
+    { "path": "/api/cron?job=monday-reminder", "schedule": "30 7 * * 1" },
+    { "path": "/api/cron?job=monday-digest", "schedule": "15 8 * * 1" }
   ]
 }
