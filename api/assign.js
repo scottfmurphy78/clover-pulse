@@ -114,14 +114,32 @@ export default async function handler(req, res) {
 
   try {
     const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
-    const { token, toUserId, weekOf, taskId, fromUserId, newTask } = body;
+    const { token, toUserId, weekOf, taskId, fromUserId, newTask, action, deadline, userId } = body;
 
     if (!token) return res.status(401).json({ error: "Missing token" });
-    if (!toUserId || !weekOf) return res.status(400).json({ error: "Missing toUserId or weekOf" });
 
     const caller = await getCaller(token);
     if (!caller) return res.status(401).json({ error: "Invalid token" });
     if (!caller.email.endsWith("@rideclover.com")) return res.status(403).json({ error: "Forbidden" });
+
+    // ── Update a task's due date on its owner's card ───────────────────
+    // Allowed for whoever assigned the task (or the owner themselves).
+    if (action === "set-deadline") {
+      const owner = userId || toUserId;
+      if (!owner || !weekOf || !taskId || !deadline) return res.status(400).json({ error: "Missing owner, weekOf, taskId or deadline" });
+      const entry = await getEntry(owner, weekOf);
+      const tasks = entry?.tasks || [];
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) return res.status(200).json({ ok: true, action: "already-moved" });
+      if (task.assigned_by !== caller.user_id && owner !== caller.user_id) return res.status(403).json({ error: "Forbidden" });
+      await sbFetch(`pulse_entries?user_id=eq.${owner}&week_of=eq.${weekOf}`, {
+        method: "PATCH",
+        body: JSON.stringify({ tasks: tasks.map(t => t.id === taskId ? { ...t, deadline } : t) }),
+      });
+      return res.status(200).json({ ok: true, action: "deadline-set" });
+    }
+
+    if (!toUserId || !weekOf) return res.status(400).json({ error: "Missing toUserId or weekOf" });
 
     // Target must be a real team member.
     const targetRows = await sbFetch(`profiles?user_id=eq.${toUserId}&select=user_id,name,slack_user_id`);

@@ -71,17 +71,19 @@ function TaskRow({ task, onToggle, onEdit, onDelete, onDeadline, weekOf, profile
 }
 
 // ── Read-only row for another member's task — only the reassign dropdown is live ──
-function ReadOnlyTaskRow({ task, weekOf, profiles, ownerId, onAssign }) {
+function ReadOnlyTaskRow({ task, weekOf, profiles, ownerId, onAssign, currentUserId, onDeadline }) {
   const cs = carryStyle(task);
   const iso = taskDeadline(task, weekOf);
   const overdue = isOverdue(iso, task.done);
+  // Whoever assigned this task can still adjust its due date.
+  const canEditDeadline = !!onDeadline && !!currentUserId && task.assigned_by === currentUserId;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: cs ? "5px 8px 5px 6px" : "5px 0", opacity: task.done ? 0.35 : 1, background: cs && !task.done ? cs.bg : "transparent", borderRadius: cs ? 8 : 0, borderLeft: cs && !task.done ? `3px solid ${cs.border}` : "none", marginBottom: cs ? 2 : 0 }}>
       <DSCheckbox checked={task.done} onChange={() => {}}/>
       <span style={{ flex: 1, minWidth: 0, overflowWrap: "break-word", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: C.gray800, textDecoration: task.done ? "line-through" : "none" }}>{task.text}</span>
       {assignerLabel(task, ownerId, profiles)}
       {cs && !task.done && <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 9, fontWeight: 700, color: cs.labelColor, whiteSpace: "nowrap", letterSpacing: "0.03em" }}>{cs.label}</span>}
-      <DeadlineChip iso={iso} overdue={overdue} canEdit={false} onLight/>
+      <DeadlineChip iso={iso} overdue={overdue} canEdit={canEditDeadline} onChange={canEditDeadline ? (d) => onDeadline(task.id, d) : undefined} onLight/>
       {profiles && onAssign && <AssigneeSelect profiles={profiles} ownerId={ownerId} onAssign={(to) => onAssign(task.id, to)}/>}
     </div>
   );

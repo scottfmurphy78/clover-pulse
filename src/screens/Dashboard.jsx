@@ -117,20 +117,20 @@ function DashboardScreen({ user, profile, token, onSignOut, onAdmin, isAdmin }) 
         ) : mobile ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}><StatTile label="Submitted" value={`${submitted}/${profiles.length}`} accent={C.blue}/><StatTile label="Blockers" value={blocked} accent={blocked>0?C.pink:C.gray800} sub={blocked>0?"Needs attention":"All clear"}/></div>
-            {sortedProfiles.map((p,i) => <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={!isHistoryView && p.user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} allProfiles={isHistoryView ? null : profiles} mobile span={getSpan(p)}/>)}
+            {sortedProfiles.map((p,i) => <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={!isHistoryView && p.user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} allProfiles={isHistoryView ? null : profiles} currentUserId={isHistoryView ? null : user?.id} mobile span={getSpan(p)}/>)}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>{!isHistoryView && <WaTile/>}<StatTile label="Done" value={`${doneTasks}/${allTasks.length}`} accent={C.blue}/><CompletionTile profiles={profiles} entries={entries}/></div>
           </div>
         ) : (
           <>
             <div style={{ display: "flex", gap: 14, alignItems: "flex-start", marginBottom: 20 }}>
               <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-                <MemberCard member={sortedProfiles[0]} entry={getEntry(sortedProfiles[0].user_id)} lastEntry={getLastEntry(sortedProfiles[0].user_id)} isCurrentUser={!isHistoryView && sortedProfiles[0].user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} allProfiles={isHistoryView ? null : profiles} mobile={false} span={getSpan(sortedProfiles[0])}/>
+                <MemberCard member={sortedProfiles[0]} entry={getEntry(sortedProfiles[0].user_id)} lastEntry={getLastEntry(sortedProfiles[0].user_id)} isCurrentUser={!isHistoryView && sortedProfiles[0].user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} allProfiles={isHistoryView ? null : profiles} currentUserId={isHistoryView ? null : user?.id} mobile={false} span={getSpan(sortedProfiles[0])}/>
               </div>
               <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
-                {otherProfiles.slice(0, colMid).map((p) => <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={!isHistoryView && p.user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} allProfiles={isHistoryView ? null : profiles} mobile={false} span={getSpan(p)}/>)}
+                {otherProfiles.slice(0, colMid).map((p) => <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={!isHistoryView && p.user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} allProfiles={isHistoryView ? null : profiles} currentUserId={isHistoryView ? null : user?.id} mobile={false} span={getSpan(p)}/>)}
               </div>
               <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
-                {otherProfiles.slice(colMid).map((p) => <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={!isHistoryView && p.user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} allProfiles={isHistoryView ? null : profiles} mobile={false} span={getSpan(p)}/>)}
+                {otherProfiles.slice(colMid).map((p) => <MemberCard key={p.user_id} member={p} entry={getEntry(p.user_id)} lastEntry={getLastEntry(p.user_id)} isCurrentUser={!isHistoryView && p.user_id===user?.id} isAdmin={!isHistoryView && isAdmin} token={token} weekOf={selectedWeek} onEntryUpdated={handleRefresh} allProfiles={isHistoryView ? null : profiles} currentUserId={isHistoryView ? null : user?.id} mobile={false} span={getSpan(p)}/>)}
               </div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, alignItems: "start" }}>
