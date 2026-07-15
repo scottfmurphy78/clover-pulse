@@ -139,7 +139,7 @@ Rules:
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-5",
+      model: "claude-sonnet-4-6",
       max_tokens: 1000,
       system,
       messages: [{ role: "user", content: userPrompt }],
@@ -151,18 +151,27 @@ Rules:
   return JSON.parse(text.replace(/```json|```/g, "").trim());
 }
 
-async function savePulseEntry(userId, weekOf, parsed) {
+async function savePulseEntry(userId, weekOf, parsed, existingEntry) {
+  const payload = {
+    user_id: userId,
+    week_of: weekOf,
+    note: parsed.note,
+    tasks: parsed.tasks,
+    completed_last: parsed.completed_last,
+    blockers: parsed.blockers,
+    submitted_at: new Date().toISOString(),
+  };
+  // PATCH an existing week's entry (e.g. from carryover or an assigned task);
+  // only POST a fresh row when there's nothing there yet. Mirrors api/slack.js.
+  if (existingEntry) {
+    return sbFetch(`pulse_entries?user_id=eq.${userId}&week_of=eq.${weekOf}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  }
   return sbFetch("pulse_entries", {
     method: "POST",
-    body: JSON.stringify({
-      user_id: userId,
-      week_of: weekOf,
-      note: parsed.note,
-      tasks: parsed.tasks,
-      completed_last: parsed.completed_last,
-      blockers: parsed.blockers,
-      submitted_at: new Date().toISOString(),
-    }),
+    body: JSON.stringify(payload),
   });
 }
 
@@ -236,7 +245,7 @@ export default async function handler(req, res) {
     if (!profile) {
       res.setHeader("Content-Type", "text/xml");
       return res.status(200).send(twimlResponse(
-        "Hi! I don't recognise this number. Sign in at clover-pulse.vercel.app and add your WhatsApp number to your profile."
+        "Hi! I don't recognise this number. Sign in at pulse.clover.tools and add your WhatsApp number to your profile."
       ));
     }
 
@@ -274,7 +283,7 @@ export default async function handler(req, res) {
     const { ownTasks, assigned, unmatched } = distributeTasks(parsed.tasks || [], roster, profile, weekOf);
     parsed.tasks = ownTasks;
 
-    await savePulseEntry(profile.user_id, weekOf, parsed);
+    await savePulseEntry(profile.user_id, weekOf, parsed, existingEntry);
     const dmByTarget = new Map(); // slack_user_id → tasks[]
     for (const { target, task } of assigned) {
       await addAssignedTask(target.user_id, weekOf, task);
@@ -297,7 +306,7 @@ export default async function handler(req, res) {
 
     res.setHeader("Content-Type", "text/xml");
     return res.status(200).send(twimlResponse(
-      `Got it ${firstName}. ${taskCount} task${taskCount !== 1 ? "s" : ""} logged for the week.${assignNote}${blockerNote}${unmatchedNote} Dashboard updated at clover-pulse.vercel.app`
+      `Got it ${firstName}. ${taskCount} task${taskCount !== 1 ? "s" : ""} logged for the week.${assignNote}${blockerNote}${unmatchedNote} Dashboard updated at pulse.clover.tools`
     ));
 
   } catch (err) {

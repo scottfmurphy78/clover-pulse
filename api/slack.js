@@ -137,7 +137,7 @@ Rules:
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: 1000, system, messages: [{ role: "user", content: userPrompt }] }),
+    body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1000, system, messages: [{ role: "user", content: userPrompt }] }),
   });
   const data = await r.json();
   if (!r.ok) throw new Error(`Claude error: ${JSON.stringify(data)}`);
@@ -227,7 +227,7 @@ async function notifyAdminsOfBlockers(profile, blockers) {
     const admin = Array.isArray(result) ? result[0] : null;
     if (admin?.slack_user_id) {
       const open = await slackPost("conversations.open", { users: admin.slack_user_id });
-      if (open.ok) await slackPost("chat.postMessage", { channel: open.channel.id, text: `⚠️ *${profile.name}* has a blocker:\n${blockerText}\n\nhttps://clover-pulse.vercel.app` });
+      if (open.ok) await slackPost("chat.postMessage", { channel: open.channel.id, text: `⚠️ *${profile.name}* has a blocker:\n${blockerText}\n\nhttps://pulse.clover.tools` });
     }
   }
 }
@@ -300,7 +300,7 @@ export default async function handler(req, res) {
 
     if (!profile) {
       console.log("No profile — sending signup message");
-      await postToChannel(event.channel, "👋 I don't recognise your account yet. Sign in at https://clover-pulse.vercel.app with your @rideclover.com Google account to get set up.");
+      await postToChannel(event.channel, "👋 I don't recognise your account yet. Sign in at https://pulse.clover.tools with your @rideclover.com Google account to get set up.");
       return res.status(200).send("ok");
     }
 
@@ -368,7 +368,7 @@ export default async function handler(req, res) {
     const assignNames = [...new Set(assigned.map(a => (a.target.name || "").split(" ")[0]))];
     const assignNote = assigned.length > 0 ? `\n📌 Assigned ${assigned.length} task${assigned.length !== 1 ? "s" : ""} to ${assignNames.join(", ")}.` : "";
     const unmatchedNote = unmatched.length ? `\n🤔 Couldn't find ${[...new Set(unmatched)].join(", ")} on the team — kept ${unmatched.length > 1 ? "those" : "that"} as your task${unmatched.length > 1 ? "s" : ""}.` : "";
-    await postToChannel(event.channel, `✅ Got it ${firstName}. *${taskCount} task${taskCount !== 1 ? "s" : ""}* logged for the week.${assignNote}${blockerNote}${unmatchedNote}\n\nView the dashboard: https://clover-pulse.vercel.app`);
+    await postToChannel(event.channel, `✅ Got it ${firstName}. *${taskCount} task${taskCount !== 1 ? "s" : ""}* logged for the week.${assignNote}${blockerNote}${unmatchedNote}\n\nView the dashboard: https://pulse.clover.tools`);
     console.log("=== DONE ===");
 
   } catch (err) {

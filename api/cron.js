@@ -149,7 +149,7 @@ async function runSundayReminder() {
     if (!profile.slack_user_id) continue;
     try {
       await sendDM(profile.slack_user_id,
-        `👋 Hey ${profile.name?.split(" ")[0] || "there"} — standup is tomorrow at 9:30am.\n\nSend me a voice note whenever you're ready with your update for the week. The earlier the better so the team can review the dashboard before the meeting. 🎙️\n\nView the dashboard: https://clover-pulse.vercel.app`
+        `👋 Hey ${profile.name?.split(" ")[0] || "there"} — standup is tomorrow at 9:30am.\n\nSend me a voice note whenever you're ready with your update for the week. The earlier the better so the team can review the dashboard before the meeting. 🎙️\n\nView the dashboard: https://pulse.clover.tools`
       );
     } catch (err) {
       console.error(`Sunday reminder error for ${profile.name}:`, err.message);
@@ -206,7 +206,7 @@ async function runMondayDigest() {
   if (!submittedEntries.length) {
     await slackPost("chat.postMessage", {
       channel: SLACK_PULSE_CHANNEL,
-      text: `📋 *Week of ${formatDate(thisWeek)}* — no updates submitted yet. Standup in 15 minutes!\n\n👉 https://clover-pulse.vercel.app`,
+      text: `📋 *Week of ${formatDate(thisWeek)}* — no updates submitted yet. Standup in 15 minutes!\n\n👉 https://pulse.clover.tools`,
     });
     return;
   }
@@ -230,7 +230,7 @@ Blockers: ${activeBlockers.map(b => typeof b === "object" ? b.text : b).join(", 
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-5",
+      model: "claude-sonnet-4-6",
       max_tokens: 300,
       messages: [{
         role: "user",
@@ -256,7 +256,7 @@ Blockers: ${activeBlockers.map(b => typeof b === "object" ? b.text : b).join(", 
 
   await slackPost("chat.postMessage", {
     channel: SLACK_PULSE_CHANNEL,
-    text: `📋 *Week of ${formatDate(thisWeek)} — Team Pulse*\n\n${digest}${missingNote}\n\n${blocks}\n\n👉 Full dashboard: https://clover-pulse.vercel.app`,
+    text: `📋 *Week of ${formatDate(thisWeek)} — Team Pulse*\n\n${digest}${missingNote}\n\n${blocks}\n\n👉 Full dashboard: https://pulse.clover.tools`,
   });
 
   console.log("Monday digest posted");
