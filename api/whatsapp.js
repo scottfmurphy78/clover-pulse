@@ -100,6 +100,11 @@ async function transcribeAudio(audioBuffer) {
 
 async function parseWithClaude(transcript, existingEntry, roster = [], speakerName = "") {
   const names = roster.map(p => (p.name || "").split(" ")[0]).filter(Boolean).join(", ");
+  // Concrete date reference so "by Friday" resolves to a real, non-past ISO date.
+  const today = new Date().toISOString().split("T")[0];
+  const weekday = new Date().toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" });
+  const monday = currentWeekOf();
+  const sunday = endOfWeek(monday);
   const system = `You are an assistant that extracts weekly work updates from voice note transcripts.
 Return ONLY valid JSON with this exact structure, no preamble, no markdown:
 {
@@ -125,7 +130,8 @@ Rules:
 - If no completed last week mentioned, return empty array
 - The speaker is ${speakerName || "the sender"}. Team members: ${names || "none"}.
 - assignee: if the speaker assigns a task to a teammate by name (e.g. "assign Antonio to fix the website"), set assignee to that teammate's first name exactly as listed above. For the speaker's own tasks, set assignee to null.
-- deadline: an ISO date "YYYY-MM-DD" ONLY if a specific due date or weekday is stated; otherwise null`;
+- Today is ${today} (${weekday}). This week runs Monday ${monday} to Sunday ${sunday}.
+- deadline: resolve any stated weekday or relative phrase ("by Friday", "next Wednesday", "end of week") to an ISO date "YYYY-MM-DD" that is today (${today}) or later — never earlier than ${monday}. If no due date is stated, use null`;
 
   const userPrompt = existingEntry
     ? `Here is their existing entry this week:\n${JSON.stringify(existingEntry)}\n\nHere is their new voice note transcript. Merge new information with existing, update done status where mentioned:\n\n${transcript}`
@@ -213,7 +219,10 @@ function distributeTasks(tasks, roster, speaker, weekOf) {
     const task = { ...t };
     const who = (task.assignee || "").trim().toLowerCase();
     delete task.assignee;
-    if (!task.deadline) task.deadline = endOfWeek(weekOf);
+    // Only trust a well-formed date that isn't before this week; otherwise default
+    // to end of week so nothing lands pre-flagged as overdue.
+    const validDeadline = /^\d{4}-\d{2}-\d{2}$/.test(task.deadline || "") && task.deadline >= weekOf;
+    if (!validDeadline) task.deadline = endOfWeek(weekOf);
     const matches = byFirst[who];
     if (!who || who === speakerFirst) {
       ownTasks.push(task);

@@ -144,13 +144,20 @@ async function transcribeAudio(audioBuffer, mimeType = "audio/webm", fileType = 
 
 async function parseWithClaude(transcript, existingEntry, roster = [], speakerName = "") {
   const names = roster.map(p => (p.name || "").split(" ")[0]).filter(Boolean).join(", ");
+  // Give Claude a concrete date reference so relative phrases ("by Friday") resolve
+  // to real, non-past ISO dates instead of hallucinated ones.
+  const today = new Date().toISOString().split("T")[0];
+  const weekday = new Date().toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" });
+  const monday = currentWeekOf();
+  const sunday = endOfWeek(monday);
   const system = `Extract weekly work updates from this transcript. Return ONLY a raw JSON object — no markdown, no backticks, no code blocks. Just the JSON.
 Schema: {"note":"one sentence max 15 words","tasks":[{"id":"t1","text":"task","done":false,"carried_over":false,"assignee":null,"deadline":null}],"completed_last":["thing done last week"],"blockers":["blocker"]}
 Rules:
 - tasks = things to do THIS week. completed_last = done last week. blockers = blocking items. Short task text. Empty arrays if none.
 - The speaker is ${speakerName || "the sender"}. Team members: ${names || "none"}.
 - assignee: if the speaker assigns a task to a teammate by name (e.g. "assign Antonio to fix the website"), set assignee to that teammate's first name exactly as listed above. For the speaker's own tasks, set assignee to null.
-- deadline: an ISO date "YYYY-MM-DD" ONLY if a specific due date or weekday is stated; otherwise null.`;
+- Today is ${today} (${weekday}). This week runs Monday ${monday} to Sunday ${sunday}.
+- deadline: resolve any stated weekday or relative phrase ("by Friday", "next Wednesday", "end of week") to an ISO date "YYYY-MM-DD" that is today (${today}) or later — never earlier than ${monday}. If no due date is stated, use null.`;
 
   const userPrompt = existingEntry
     ? `Existing:\n${JSON.stringify(existingEntry)}\n\nNew update (merge):\n${transcript}`
@@ -226,7 +233,10 @@ function distributeTasks(tasks, roster, speaker, weekOf) {
     const task = { ...t };
     const who = (task.assignee || "").trim().toLowerCase();
     delete task.assignee;
-    if (!task.deadline) task.deadline = endOfWeek(weekOf);
+    // Only trust a well-formed date that isn't before this week; otherwise default
+    // to end of week so nothing lands pre-flagged as overdue.
+    const validDeadline = /^\d{4}-\d{2}-\d{2}$/.test(task.deadline || "") && task.deadline >= weekOf;
+    if (!validDeadline) task.deadline = endOfWeek(weekOf);
     const matches = byFirst[who];
     if (!who || who === speakerFirst) {
       ownTasks.push(task);

@@ -8,6 +8,14 @@ import { OnboardingScreen } from "./screens/Onboarding";
 import { AdminScreen } from "./screens/Admin";
 import { DashboardScreen } from "./screens/Dashboard";
 
+// No login screen by design — bounce straight to Google OAuth (same as Radar).
+function redirectToLogin() {
+  supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo: window.location.origin, queryParams: { hd: "rideclover.com" } },
+  });
+}
+
 export default function App() {
   const [screen, setScreen] = useState("loading");
   const [token, setToken] = useState(null);
@@ -19,14 +27,7 @@ export default function App() {
 
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session?.user?.email?.endsWith("@rideclover.com")) {
-        // No valid session — auto-redirect to Google OAuth, same as Radar
-        supabase.auth.signInWithOAuth({
-          provider: "google",
-          options: {
-            redirectTo: window.location.origin,
-            queryParams: { hd: "rideclover.com" },
-          },
-        });
+        redirectToLogin();
         return; // Keep showing spinner during redirect
       }
 
@@ -43,6 +44,8 @@ export default function App() {
       if (!session?.user?.email?.endsWith("@rideclover.com")) {
         setToken(null); setUser(null); setProfile(null);
         setScreen("loading");
+        // On explicit sign-out, bounce back to Google instead of hanging on the spinner.
+        if (_event === "SIGNED_OUT") redirectToLogin();
         return;
       }
       const accessToken = session.access_token;

@@ -57,7 +57,9 @@ function DashboardScreen({ user, profile, token, onSignOut, onAdmin, isAdmin }) 
 
   const thisWeek = currentWeekOf();
   const isHistoryView = selectedWeek !== thisWeek;
-  const prevWeek = (() => { const d = new Date(selectedWeek + "T00:00:00"); d.setDate(d.getDate() - 7); return d.toISOString().split("T")[0]; })();
+  // Compute in UTC so the Monday key matches how week_of is stored (browser-local
+  // would shift a day for UTC+ timezones and break the "Last week" lookup).
+  const prevWeek = (() => { const d = new Date(selectedWeek + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - 7); return d.toISOString().split("T")[0]; })();
 
   const loadData = async () => {
     const [profs, ents, lastEnts, weeks] = await Promise.all([sb.getAllProfiles(token), sb.getPulseEntries(token, selectedWeek), sb.getPulseEntries(token, prevWeek), sb.getAllWeeks(token)]);
