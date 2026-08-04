@@ -12,18 +12,20 @@ function assignerLabel(task, ownerId, profiles, onDark = false) {
 }
 
 // ── Deadline chip — shows due date, owner can click to change ──────────
-// Colour by urgency: red only for genuinely overdue, amber for today/soon,
-// muted for anything further out or already done.
+// Overdue is the only "alarm" state (red). On-track dates read positive — green,
+// with today highlighted in a pill — because a task is meant to be done ON its
+// due date (e.g. items synced from Radar), not rushed before it. Further-out and
+// completed dates stay muted.
 const DEADLINE_STYLES = {
   overdue:  { light: C.error,   dark: "#ffb3d0",               title: "Overdue" },
-  today:    { light: "#B76E00", dark: "#FFCF8B",               title: "Due today" },
-  soon:     { light: "#B76E00", dark: "#FFCF8B",               title: "Due soon" },
+  today:    { light: C.success, dark: "#5FE3BE", bgLight: "rgba(0,196,140,0.12)", bgDark: "rgba(95,227,190,0.18)", title: "Due today — on track" },
+  soon:     { light: C.success, dark: "#5FE3BE",               title: "Due soon — on track" },
   upcoming: { light: C.gray400, dark: "rgba(255,255,255,0.5)", title: "Due" },
   done:     { light: C.gray400, dark: "rgba(255,255,255,0.5)", title: "Due" },
 };
 function deadlineLabel(status, iso) {
   if (status === "overdue") return `⚠ ${formatDeadline(iso)}`;
-  if (status === "today") return "due today";
+  if (status === "today") return "✓ due today";
   return `due ${formatDeadline(iso)}`;
 }
 function DeadlineChip({ iso, status = "upcoming", canEdit, onChange, onLight = false }) {
@@ -39,10 +41,11 @@ function DeadlineChip({ iso, status = "upcoming", canEdit, onChange, onLight = f
   }
   const s = DEADLINE_STYLES[status] || DEADLINE_STYLES.upcoming;
   const color = onLight ? s.light : s.dark;
+  const bg = onLight ? s.bgLight : s.bgDark;
   return (
     <span onClick={canEdit ? (e) => { e.stopPropagation(); setEditing(true); } : undefined}
       title={s.title + (canEdit ? " — click to change" : "")}
-      style={{ display: "inline-flex", alignItems: "center", gap: 2, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 600, color, whiteSpace: "nowrap", cursor: canEdit ? "pointer" : "default", flexShrink: 0, letterSpacing: "0.02em" }}>
+      style={{ display: "inline-flex", alignItems: "center", gap: 2, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 600, color, whiteSpace: "nowrap", cursor: canEdit ? "pointer" : "default", flexShrink: 0, letterSpacing: "0.02em", ...(bg ? { background: bg, borderRadius: 100, padding: "1px 7px" } : null) }}>
       {deadlineLabel(status, iso)}
     </span>
   );
