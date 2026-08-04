@@ -24,6 +24,21 @@ function formatDeadline(iso) {
 }
 function todayISO() { return new Date().toISOString().split("T")[0]; }
 function isOverdue(iso, done) { return !done && iso < todayISO(); }
+// Whole-day distance from today (UTC) to an ISO date. Negative = in the past.
+function daysUntil(iso) {
+  const ms = new Date(iso + "T00:00:00Z") - new Date(todayISO() + "T00:00:00Z");
+  return Math.round(ms / 86400000);
+}
+// Deadline urgency for styling. Red (overdue) is reserved for dates that have
+// actually passed; today and the next two days read as "soon", not late.
+function deadlineStatus(iso, done) {
+  if (done) return "done";
+  const d = daysUntil(iso);
+  if (d < 0) return "overdue";
+  if (d === 0) return "today";
+  if (d <= 2) return "soon";
+  return "upcoming";
+}
 function useIsMobile() {
   const [m, setM] = useState(typeof window !== "undefined" ? window.innerWidth < 768 : false);
   useEffect(() => { const fn = () => setM(window.innerWidth < 768); window.addEventListener("resize", fn); return () => window.removeEventListener("resize", fn); }, []);
@@ -52,4 +67,4 @@ function carryStyle(task) {
 function blockerText(b) { return b && typeof b === "object" ? b.text : b; }
 function blockerResolved(b) { return b && typeof b === "object" ? !!b.resolved : false; }
 
-export { currentWeekOf, formatWeekLabel, endOfWeek, taskDeadline, formatDeadline, todayISO, isOverdue, useIsMobile, getInitials, ADMIN_EMAILS, carryCount, carryStyle, blockerText, blockerResolved };
+export { currentWeekOf, formatWeekLabel, endOfWeek, taskDeadline, formatDeadline, todayISO, isOverdue, daysUntil, deadlineStatus, useIsMobile, getInitials, ADMIN_EMAILS, carryCount, carryStyle, blockerText, blockerResolved };

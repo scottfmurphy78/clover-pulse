@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { C } from "../theme";
-import { taskDeadline, isOverdue, formatDeadline, carryStyle, carryCount } from "../helpers";
+import { taskDeadline, deadlineStatus, formatDeadline, carryStyle, carryCount } from "../helpers";
 import { DSCheckbox } from "../ui";
 
 // ── "↳ from X" attribution when a task was assigned by someone else ───
@@ -12,7 +12,21 @@ function assignerLabel(task, ownerId, profiles, onDark = false) {
 }
 
 // ── Deadline chip — shows due date, owner can click to change ──────────
-function DeadlineChip({ iso, overdue, canEdit, onChange, onLight = false }) {
+// Colour by urgency: red only for genuinely overdue, amber for today/soon,
+// muted for anything further out or already done.
+const DEADLINE_STYLES = {
+  overdue:  { light: C.error,   dark: "#ffb3d0",               title: "Overdue" },
+  today:    { light: "#B76E00", dark: "#FFCF8B",               title: "Due today" },
+  soon:     { light: "#B76E00", dark: "#FFCF8B",               title: "Due soon" },
+  upcoming: { light: C.gray400, dark: "rgba(255,255,255,0.5)", title: "Due" },
+  done:     { light: C.gray400, dark: "rgba(255,255,255,0.5)", title: "Due" },
+};
+function deadlineLabel(status, iso) {
+  if (status === "overdue") return `⚠ ${formatDeadline(iso)}`;
+  if (status === "today") return "due today";
+  return `due ${formatDeadline(iso)}`;
+}
+function DeadlineChip({ iso, status = "upcoming", canEdit, onChange, onLight = false }) {
   const [editing, setEditing] = useState(false);
   if (editing && canEdit) {
     return (
@@ -23,12 +37,13 @@ function DeadlineChip({ iso, overdue, canEdit, onChange, onLight = false }) {
         style={{ border: `1.5px solid ${C.blue}`, borderRadius: 6, padding: "1px 5px", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, color: C.gray800, outline: "none", colorScheme: "light" }}/>
     );
   }
-  const color = overdue ? (onLight ? C.error : "#ffb3d0") : (onLight ? C.gray400 : "rgba(255,255,255,0.5)");
+  const s = DEADLINE_STYLES[status] || DEADLINE_STYLES.upcoming;
+  const color = onLight ? s.light : s.dark;
   return (
     <span onClick={canEdit ? (e) => { e.stopPropagation(); setEditing(true); } : undefined}
-      title={overdue ? "Overdue" + (canEdit ? " — click to change" : "") : "Due" + (canEdit ? " — click to change" : "")}
+      title={s.title + (canEdit ? " — click to change" : "")}
       style={{ display: "inline-flex", alignItems: "center", gap: 2, fontFamily: "'Poppins',Arial,sans-serif", fontSize: 10, fontWeight: 600, color, whiteSpace: "nowrap", cursor: canEdit ? "pointer" : "default", flexShrink: 0, letterSpacing: "0.02em" }}>
-      {overdue ? `⚠ ${formatDeadline(iso)}` : `due ${formatDeadline(iso)}`}
+      {deadlineLabel(status, iso)}
     </span>
   );
 }
@@ -52,7 +67,7 @@ function TaskRow({ task, onToggle, onEdit, onDelete, onDeadline, weekOf, profile
   const save = () => { if (val.trim() && val !== task.text) onEdit(task.id, val.trim()); setEditing(false); };
   const cs = carryStyle(task);
   const iso = taskDeadline(task, weekOf);
-  const overdue = isOverdue(iso, task.done);
+  const status = deadlineStatus(iso, task.done);
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: cs ? "5px 8px 5px 6px" : "5px 0", opacity: task.done ? 0.38 : 1, transition: "opacity 0.18s", background: cs && !task.done ? cs.bg : "transparent", borderRadius: cs ? 8 : 0, borderLeft: cs && !task.done ? `3px solid ${cs.border}` : "none", marginBottom: cs ? 2 : 0 }}>
       <DSCheckbox checked={task.done} onChange={() => onToggle(task.id)}/>
@@ -63,7 +78,7 @@ function TaskRow({ task, onToggle, onEdit, onDelete, onDeadline, weekOf, profile
       )}
       {assignerLabel(task, ownerId, profiles)}
       {cs && !task.done && <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 9, fontWeight: 700, color: cs.labelColor, whiteSpace: "nowrap", letterSpacing: "0.03em" }}>{cs.label}</span>}
-      <DeadlineChip iso={iso} overdue={overdue} canEdit onLight onChange={(d) => onDeadline(task.id, d)}/>
+      <DeadlineChip iso={iso} status={status} canEdit onLight onChange={(d) => onDeadline(task.id, d)}/>
       {profiles && <AssigneeSelect profiles={profiles} ownerId={ownerId} onAssign={(to) => onAssign(task.id, to)}/>}
       <button onClick={() => onDelete(task.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 4px", color: C.gray400, fontSize: 14, lineHeight: 1, opacity: 0.5, display: "flex", alignItems: "center" }}>×</button>
     </div>
@@ -74,7 +89,7 @@ function TaskRow({ task, onToggle, onEdit, onDelete, onDeadline, weekOf, profile
 function ReadOnlyTaskRow({ task, weekOf, profiles, ownerId, onAssign, currentUserId, onDeadline }) {
   const cs = carryStyle(task);
   const iso = taskDeadline(task, weekOf);
-  const overdue = isOverdue(iso, task.done);
+  const status = deadlineStatus(iso, task.done);
   // Whoever assigned this task can still adjust its due date.
   const canEditDeadline = !!onDeadline && !!currentUserId && task.assigned_by === currentUserId;
   return (
@@ -83,7 +98,7 @@ function ReadOnlyTaskRow({ task, weekOf, profiles, ownerId, onAssign, currentUse
       <span style={{ flex: 1, minWidth: 0, overflowWrap: "break-word", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13.5, color: C.gray800, textDecoration: task.done ? "line-through" : "none" }}>{task.text}</span>
       {assignerLabel(task, ownerId, profiles)}
       {cs && !task.done && <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 9, fontWeight: 700, color: cs.labelColor, whiteSpace: "nowrap", letterSpacing: "0.03em" }}>{cs.label}</span>}
-      <DeadlineChip iso={iso} overdue={overdue} canEdit={canEditDeadline} onChange={canEditDeadline ? (d) => onDeadline(task.id, d) : undefined} onLight/>
+      <DeadlineChip iso={iso} status={status} canEdit={canEditDeadline} onChange={canEditDeadline ? (d) => onDeadline(task.id, d) : undefined} onLight/>
       {profiles && onAssign && <AssigneeSelect profiles={profiles} ownerId={ownerId} onAssign={(to) => onAssign(task.id, to)}/>}
     </div>
   );
@@ -122,7 +137,7 @@ function HeroTaskRow({ task, onToggle, onEdit, onDelete, onDeadline, isCurrentUs
   const save = () => { if (val.trim() && val !== task.text) onEdit(task.id, val.trim()); setEditing(false); };
   const cs = carryStyle(task);
   const iso = taskDeadline(task, weekOf);
-  const overdue = isOverdue(iso, task.done);
+  const status = deadlineStatus(iso, task.done);
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: cs ? "5px 8px 5px 6px" : "5px 0", opacity: task.done ? 0.35 : 1, transition: "opacity 0.18s", background: cs && !task.done ? (carryCount(task) === 1 ? "rgba(255,181,71,0.15)" : "rgba(255,77,109,0.15)") : "transparent", borderRadius: cs ? 8 : 0, borderLeft: cs && !task.done ? `3px solid ${cs.border}` : "none", marginBottom: cs ? 2 : 0 }}>
       <div onClick={() => onToggle(task.id)} style={{ width: 18, height: 18, borderRadius: 4, flexShrink: 0, cursor: "pointer", border: task.done ? "none" : "2px solid rgba(255,255,255,0.4)", background: task.done ? "rgba(255,255,255,0.9)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s" }}>
@@ -135,7 +150,7 @@ function HeroTaskRow({ task, onToggle, onEdit, onDelete, onDeadline, isCurrentUs
       )}
       {assignerLabel(task, ownerId, profiles, true)}
       {cs && !task.done && <span style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 9, fontWeight: 700, color: cs.labelColor, whiteSpace: "nowrap", letterSpacing: "0.03em" }}>{cs.label}</span>}
-      <DeadlineChip iso={iso} overdue={overdue} canEdit={isCurrentUser} onChange={(d) => onDeadline(task.id, d)}/>
+      <DeadlineChip iso={iso} status={status} canEdit={isCurrentUser} onChange={(d) => onDeadline(task.id, d)}/>
       {isCurrentUser && profiles && <AssigneeSelect profiles={profiles} ownerId={ownerId} onAssign={(to) => onAssign(task.id, to)} onLight/>}
       {isCurrentUser && <button onClick={() => onDelete(task.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 4px", color: "rgba(255,255,255,0.3)", fontSize: 14, lineHeight: 1 }}>×</button>}
     </div>
