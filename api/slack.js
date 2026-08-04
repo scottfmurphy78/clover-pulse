@@ -1,6 +1,7 @@
 // /api/slack.js — Clover Pulse Slack event handler
 
 import crypto from "crypto";
+import { waitUntil } from "@vercel/functions";
 
 // Raw body is required to verify Slack's request signature, so disable parsing.
 export const config = {
@@ -313,6 +314,21 @@ export default async function handler(req, res) {
     if (!event.user)                         return res.status(200).send("ok");
     if (event.channel_type !== "im")         return res.status(200).send("ok");
 
+    // Everything above is fast (< 3s). Ack Slack now so it doesn't time out and
+    // retry (the cause of duplicate processing); run the slow work in the background.
+    waitUntil(processMessage(event).catch(e => console.error("Background error:", e.message, e.stack?.substring(0, 300))));
+    return res.status(200).send("ok");
+
+  } catch (err) {
+    console.error("ERROR:", err.message, err.stack?.substring(0, 300));
+    return res.status(200).send("ok");
+  }
+}
+
+// Heavy processing — runs after Slack has already been 200'd (via waitUntil),
+// so it can safely take as long as transcription + parsing need.
+async function processMessage(event) {
+  try {
     console.log("Processing from:", event.user, "channel:", event.channel);
 
     // Profile lookup
@@ -341,7 +357,7 @@ export default async function handler(req, res) {
     if (!profile) {
       console.log("No profile — sending signup message");
       await postToChannel(event.channel, "👋 I don't recognise your account yet. Sign in at https://pulse.clover.tools with your @rideclover.com Google account to get set up.");
-      return res.status(200).send("ok");
+      return;
     }
 
     console.log("Profile:", profile.name, profile.email, profile.user_id);
@@ -366,7 +382,7 @@ export default async function handler(req, res) {
 
     if (!transcript) {
       await postToChannel(event.channel, "Send me a voice note or text message with your weekly update. 🎙️");
-      return res.status(200).send("ok");
+      return;
     }
 
     const weekOf = currentWeekOf();
@@ -410,11 +426,8 @@ export default async function handler(req, res) {
     const unmatchedNote = unmatched.length ? `\n🤔 Couldn't find ${[...new Set(unmatched)].join(", ")} on the team — kept ${unmatched.length > 1 ? "those" : "that"} as your task${unmatched.length > 1 ? "s" : ""}.` : "";
     await postToChannel(event.channel, `✅ Got it ${firstName}. *${taskCount} task${taskCount !== 1 ? "s" : ""}* logged for the week.${assignNote}${blockerNote}${unmatchedNote}\n\nView the dashboard: https://pulse.clover.tools`);
     console.log("=== DONE ===");
-
   } catch (err) {
-    console.error("ERROR:", err.message, err.stack?.substring(0, 300));
-    try { await postToChannel(body?.event?.channel, "Something went wrong. Try again in a moment."); } catch {}
+    console.error("processMessage error:", err.message, err.stack?.substring(0, 300));
+    try { await postToChannel(event.channel, "Something went wrong. Try again in a moment."); } catch {}
   }
-
-  return res.status(200).send("ok");
 }

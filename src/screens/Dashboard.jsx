@@ -18,7 +18,6 @@ function ProfileMenu({ user, profile, onSignOut, isAdmin, onAdmin }) {
           <div style={{ padding: "10px 16px 10px", borderBottom: `0.5px solid ${C.gray100}` }}>
             <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, fontWeight: 600, color: C.gray800 }}>{profile?.name || user?.email}</div>
             <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, color: C.gray400, marginTop: 1 }}>{user?.email}</div>
-            {profile?.whatsapp && <div style={{ fontFamily: "'Poppins',Arial,sans-serif", fontSize: 11, color: "#25D366", marginTop: 3 }}>WhatsApp: {profile.whatsapp}</div>}
           </div>
           {isAdmin && (<button onClick={() => { setOpen(false); onAdmin(); }} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "10px 16px", background: "none", border: "none", cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: C.blue, textAlign: "left", fontWeight: 500 }}>⚙ Admin</button>)}
           <button onClick={onSignOut} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "10px 16px", background: "none", border: "none", cursor: "pointer", fontFamily: "'Poppins',Arial,sans-serif", fontSize: 13, color: C.error, textAlign: "left" }}>Sign out</button>

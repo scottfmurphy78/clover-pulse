@@ -2,7 +2,7 @@
 // /api/assign — move a task to another member, or create one on their card
 //
 // Cross-user writes go through the service key here (same trust model as the
-// Slack/WhatsApp bots) so the dashboard never has to write another user's row
+// Slack bot) so the dashboard never has to write another user's row
 // directly and we don't depend on row-level-security policy details.
 //
 // Body: {
@@ -18,6 +18,11 @@
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
+const ADMIN_EMAILS = ["scott@rideclover.com", "antonio@rideclover.com"];
+
+// Blockers may be a plain string (legacy) or { text, resolved }. Normalize on read.
+function blockerText(b) { return b && typeof b === "object" ? b.text : b; }
+function blockerResolved(b) { return b && typeof b === "object" ? !!b.resolved : false; }
 
 async function sbFetch(path, options = {}) {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -114,7 +119,7 @@ export default async function handler(req, res) {
 
   try {
     const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
-    const { token, toUserId, weekOf, taskId, fromUserId, newTask, action, deadline, userId } = body;
+    const { token, toUserId, weekOf, taskId, fromUserId, newTask, action, deadline, userId, blockerIndex } = body;
 
     if (!token) return res.status(401).json({ error: "Missing token" });
 
@@ -137,6 +142,24 @@ export default async function handler(req, res) {
         body: JSON.stringify({ tasks: tasks.map(t => t.id === taskId ? { ...t, deadline } : t) }),
       });
       return res.status(200).json({ ok: true, action: "deadline-set" });
+    }
+
+    // ── Resolve a blocker on its owner's card ──────────────────────────
+    // Allowed for the owner themselves or an admin. Routed through the service
+    // key so an admin can resolve another member's blocker without relying on RLS.
+    if (action === "resolve-blocker") {
+      const owner = userId || toUserId;
+      if (!owner || !weekOf || blockerIndex == null) return res.status(400).json({ error: "Missing owner, weekOf or blockerIndex" });
+      if (owner !== caller.user_id && !ADMIN_EMAILS.includes(caller.email)) return res.status(403).json({ error: "Forbidden" });
+      const entry = await getEntry(owner, weekOf);
+      const blockers = entry?.blockers || [];
+      if (!blockers[blockerIndex]) return res.status(200).json({ ok: true, action: "already-resolved" });
+      const updated = blockers.map((b, i) => ({ text: blockerText(b), resolved: i === blockerIndex ? true : blockerResolved(b) }));
+      await sbFetch(`pulse_entries?user_id=eq.${owner}&week_of=eq.${weekOf}`, {
+        method: "PATCH",
+        body: JSON.stringify({ blockers: updated }),
+      });
+      return res.status(200).json({ ok: true, action: "blocker-resolved" });
     }
 
     if (!toUserId || !weekOf) return res.status(400).json({ error: "Missing toUserId or weekOf" });

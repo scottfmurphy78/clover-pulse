@@ -37,7 +37,7 @@ export default function App() {
       setToken(accessToken);
       setUser(u);
       setProfile(p);
-      setScreen(p?.whatsapp ? "dashboard" : "onboarding");
+      setScreen(p ? "dashboard" : "onboarding");
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
@@ -54,7 +54,7 @@ export default function App() {
       setToken(accessToken);
       setUser(u);
       setProfile(p);
-      setScreen(p?.whatsapp ? "dashboard" : "onboarding");
+      setScreen(p ? "dashboard" : "onboarding");
     });
 
     return () => subscription.unsubscribe();

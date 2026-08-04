@@ -72,9 +72,21 @@ function MemberCard({ member, entry, lastEntry, isCurrentUser, isAdmin, token, w
 
   const resolveBlocker = async (index) => {
     const updated = blockers.map((b, i) => ({ text: blockerText(b), resolved: i === index ? true : blockerResolved(b) }));
-    setBlockers(updated);
+    setBlockers(updated); // optimistic
     setSaving(true);
-    try { await sb.upsertPulseEntry(token, { ...entry, blockers: updated }); } catch (err) { console.error("Resolve error:", err); }
+    try {
+      if (isCurrentUser) {
+        await sb.upsertPulseEntry(token, { ...entry, blockers: updated });
+      } else {
+        // Admin resolving another member's blocker — route through the service-key
+        // endpoint so it isn't silently dropped by row-level security.
+        const r = await fetch("/api/assign", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, action: "resolve-blocker", userId: member.user_id, weekOf, blockerIndex: index }),
+        });
+        if (!r.ok) console.error("Resolve failed:", await r.text());
+      }
+    } catch (err) { console.error("Resolve error:", err); }
     setSaving(false);
     onEntryUpdated();
   };
